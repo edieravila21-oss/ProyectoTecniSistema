@@ -46,7 +46,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
-  console.log(`[Server] TechServ Pro corriendo en puerto ${PORT}`);
+  console.log(`[Server] RefriElectri Pro corriendo en puerto ${PORT}`);
 
   if (process.env.WHATSAPP_ENABLED === 'true') {
     try {

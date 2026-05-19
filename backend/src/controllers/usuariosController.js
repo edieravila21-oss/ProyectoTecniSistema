@@ -93,7 +93,7 @@ const crear = async (req, res, next) => {
 
     await enviarEmail({
       to: email,
-      subject: `Bienvenido a ${process.env.NOMBRE_NEGOCIO || 'TechServ Pro'}`,
+      subject: `Bienvenido a ${process.env.NOMBRE_NEGOCIO || 'RefriElectri Pro'}`,
       html: `<p>Hola ${nombre},</p>
       <p>Tu cuenta de técnico ha sido creada.</p>
       <p><strong>Email:</strong> ${email}</p>

@@ -91,7 +91,7 @@ const forgotPassword = async (req, res, next) => {
 
       await enviarEmail({
         to: email,
-        subject: 'Recuperar PIN - TechServ Pro',
+        subject: 'Recuperar PIN - RefriElectri Pro',
         html: `<p>Hola ${usuario.nombre},</p>
         <p>Usa este enlace para restablecer tu PIN de acceso (válido por 1 hora):</p>
         <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${token}">Restablecer PIN</a></p>

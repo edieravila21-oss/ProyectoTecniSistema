@@ -45,7 +45,7 @@ const iniciar = async () => {
     version,
     auth: state,
     logger: pino({ level: 'silent' }),
-    browser: ['TechServ Pro', 'Chrome', '1.0.0'],
+    browser: ['RefriElectri Pro', 'Chrome', '1.0.0'],
   });
 
   sock.ev.on('creds.update', saveCreds);

@@ -123,7 +123,7 @@ export const AdminLayout = () => {
                 <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
                   <Zap className="h-4 w-4 text-white" />
                 </div>
-                <span className="font-bold text-sm text-slate-800">TechServ <span className="text-blue-600">Pro</span></span>
+                <span className="font-bold text-sm text-slate-800">RefriElectri <span className="text-blue-600">Pro</span></span>
               </div>
               <button onClick={() => setMobileOpen(false)} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100">
                 <X className="h-4 w-4 text-slate-500" />

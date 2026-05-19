@@ -24,7 +24,7 @@ const verificarRecordatorios = async () => {
     for (const rec of pendientes) {
       const tipo = tipoLabel[rec.equipo.tipo] || 'equipo';
       const equipo = `${tipo} ${rec.equipo.marca || ''} ${rec.equipo.modelo || ''}`.trim();
-      const mensaje = `🔧 *TechServ Pro* — Hola ${rec.cliente.nombre}, te recordamos que tu ${equipo} necesita mantenimiento preventivo. ¡Agenda tu cita y evita averías! Escríbenos para agendar.`;
+      const mensaje = `🔧 *RefriElectri Pro* — Hola ${rec.cliente.nombre}, te recordamos que tu ${equipo} necesita mantenimiento preventivo. ¡Agenda tu cita y evita averías! Escríbenos para agendar.`;
 
       try {
         await enviarMensaje(rec.cliente.telefono, mensaje);

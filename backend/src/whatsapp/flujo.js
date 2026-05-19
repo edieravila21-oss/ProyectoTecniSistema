@@ -165,7 +165,7 @@ const procesarBuffer = async (telefono, sesiones) => {
   };
 
   const config = await prisma.configuracion.findFirst();
-  const negocio = config?.nombre_negocio || process.env.NOMBRE_NEGOCIO || 'TechServ Pro';
+  const negocio = config?.nombre_negocio || process.env.NOMBRE_NEGOCIO || 'RefriElectri Pro';
 
   // ═══════════════════════════════════════════════
   // OBTENER CONTEXTO DEL CLIENTE
