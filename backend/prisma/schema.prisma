@@ -1,0 +1,381 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Rol {
+  admin
+  tecnico
+}
+
+enum Especialidad {
+  aires
+  neveras
+  ambos
+}
+
+enum TipoEquipo {
+  aire_acondicionado
+  nevera
+  otro
+}
+
+enum EstadoServicio {
+  pendiente
+  asignado
+  en_camino
+  en_servicio
+  completado
+  cancelado
+}
+
+enum MetodoPago {
+  efectivo
+  transferencia
+  link_pago
+}
+
+enum OrigenServicio {
+  whatsapp
+  manual
+}
+
+enum CategoriaChecklist {
+  llegada
+  diagnostico
+  reparacion
+  cierre
+}
+
+enum TipoFoto {
+  antes
+  durante
+  despues
+}
+
+enum DireccionMensaje {
+  entrante
+  saliente
+}
+
+enum TipoMensaje {
+  texto
+  imagen
+  audio
+}
+
+enum EstadoMensaje {
+  procesado
+  escalado
+  pendiente
+}
+
+enum EstadoConversacion {
+  nuevo
+  en_conversacion
+  agendado
+  escalado
+  bot_pausado
+  completado
+}
+
+enum TipoEvento {
+  creado
+  asignado
+  en_camino
+  llegada
+  en_servicio
+  completado
+  cancelado
+  nota
+  foto_subida
+  checklist_item
+}
+
+enum TipoBloqueo {
+  personal
+  vacaciones
+  capacitacion
+  almuerzo
+  cita_medica
+  otro
+}
+
+model Usuario {
+  id            String        @id @default(uuid())
+  nombre        String
+  email         String        @unique
+  password      String
+  rol           Rol
+  telefono      String?
+  foto_url      String?
+  activo        Boolean       @default(true)
+  especialidad  Especialidad  @default(ambos)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  servicios         Servicio[]        @relation("TecnicoServicios")
+  checklistItems    ChecklistItem[]   @relation("CompletadoPor")
+  eventos           EventoServicio[]
+  evaluaciones      Evaluacion[]
+  eventosCalendario     EventoCalendario[] @relation("EventosTecnico")
+  eventosCalendarioCreados EventoCalendario[] @relation("EventosCreadosPor")
+
+  @@map("usuarios")
+}
+
+model Evaluacion {
+  id                String   @id @default(uuid())
+  tecnicoId         String
+  fecha             DateTime @default(now())
+  conocimiento      Json     // Scores for knowledge questions
+  servicio          Json     // Scores for service questions
+  promedio_k        Float
+  promedio_s        Float
+  analisis          String?
+  tecnico           Usuario  @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+
+  @@map("evaluaciones")
+}
+
+model Cliente {
+  id                 String    @id @default(uuid())
+  nombre             String
+  telefono           String    @unique
+  email              String?
+  direccion_principal String?
+  notas              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  equipos            Equipo[]
+  servicios          Servicio[]
+  mensajes           MensajeWhatsApp[]
+  recordatorios      RecordatorioMantenimiento[]
+  conversaciones     ConversacionWhatsApp[]
+
+  @@map("clientes")
+}
+
+model Equipo {
+  id         String     @id @default(uuid())
+  clienteId  String
+  tipo       TipoEquipo
+  marca      String?
+  modelo     String?
+  serial     String?
+  notas      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  cliente    Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  servicios  Servicio[]
+  recordatorios RecordatorioMantenimiento[]
+
+  @@map("equipos")
+}
+
+model Servicio {
+  id                  String         @id @default(uuid())
+  clienteId           String
+  equipoId            String?
+  tecnicoId           String?
+  estado              EstadoServicio @default(pendiente)
+  descripcion_falla   String?
+  fecha_programada    DateTime?
+  hora_inicio         String?
+  hora_fin            String?
+  fecha_inicio_real   DateTime?
+  fecha_fin_real      DateTime?
+  direccion_servicio  String?
+  valor_estimado      Float?
+  valor_final         Float?
+  metodo_pago         MetodoPago?
+  calificacion_cliente Int?
+  notas_admin         String?
+  notas_tecnico       String?
+  falla_confirmada    Boolean?
+  diagnostico_final   String?
+  repuestos           Json?
+  origen              OrigenServicio @default(manual)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  cliente    Cliente   @relation(fields: [clienteId], references: [id])
+  equipo     Equipo?   @relation(fields: [equipoId], references: [id])
+  tecnico    Usuario?  @relation("TecnicoServicios", fields: [tecnicoId], references: [id])
+
+  checklist       ChecklistItem[]
+  fotos           FotoServicio[]
+  firma           FirmaCliente?
+  eventos         EventoServicio[]
+  conversaciones  ConversacionWhatsApp[]
+
+  @@map("servicios")
+}
+
+model ChecklistItem {
+  id              String            @id @default(uuid())
+  servicioId      String
+  categoria       CategoriaChecklist
+  descripcion     String
+  completado      Boolean           @default(false)
+  completado_at   DateTime?
+  completado_por_id String?
+  orden           Int
+
+  servicio        Servicio          @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+  completado_por  Usuario?          @relation("CompletadoPor", fields: [completado_por_id], references: [id])
+
+  @@map("checklist_items")
+}
+
+model FotoServicio {
+  id          String    @id @default(uuid())
+  servicioId  String
+  url         String
+  tipo        TipoFoto
+  subida_at   DateTime  @default(now())
+
+  servicio    Servicio  @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+
+  @@map("fotos_servicio")
+}
+
+model FirmaCliente {
+  id          String    @id @default(uuid())
+  servicioId  String    @unique
+  url         String
+  firmado_at  DateTime  @default(now())
+
+  servicio    Servicio  @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+
+  @@map("firmas_cliente")
+}
+
+model EventoServicio {
+  id          String      @id @default(uuid())
+  servicioId  String
+  usuarioId   String?
+  tipo        TipoEvento
+  descripcion String
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+
+  servicio    Servicio    @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+  usuario     Usuario?    @relation(fields: [usuarioId], references: [id])
+
+  @@map("eventos_servicio")
+}
+
+model MensajeWhatsApp {
+  id          String           @id @default(uuid())
+  clienteId   String?
+  telefono    String
+  direccion   DireccionMensaje
+  contenido   String
+  tipo        TipoMensaje      @default(texto)
+  estado      EstadoMensaje    @default(pendiente)
+  sesion_id   String?
+  createdAt   DateTime         @default(now())
+
+  cliente     Cliente?         @relation(fields: [clienteId], references: [id])
+
+  @@map("mensajes_whatsapp")
+}
+
+model ConversacionWhatsApp {
+  id              String              @id @default(uuid())
+  telefono        String              @unique
+  clienteId       String?
+  nombre          String?
+  estado          EstadoConversacion  @default(nuevo)
+  bot_activo      Boolean             @default(true)
+  ultimo_mensaje  String?
+  ultimo_mensaje_at DateTime?
+  servicioId      String?
+  notas_admin     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  cliente         Cliente?            @relation(fields: [clienteId], references: [id])
+  servicio        Servicio?           @relation(fields: [servicioId], references: [id])
+
+  @@map("conversaciones_whatsapp")
+}
+
+model RecordatorioMantenimiento {
+  id                        String    @id @default(uuid())
+  clienteId                 String
+  equipoId                  String
+  fecha_ultimo_servicio     DateTime
+  fecha_proximo_recordatorio DateTime
+  enviado                   Boolean   @default(false)
+  enviado_at                DateTime?
+
+  cliente  Cliente @relation(fields: [clienteId], references: [id])
+  equipo   Equipo  @relation(fields: [equipoId], references: [id])
+
+  @@map("recordatorios_mantenimiento")
+}
+
+model EventoCalendario {
+  id          String      @id @default(uuid())
+  tecnicoId   String
+  titulo      String
+  descripcion String?
+  fecha       DateTime    @db.Date
+  hora_inicio String
+  hora_fin    String
+  tipo        TipoBloqueo @default(personal)
+  todo_el_dia Boolean     @default(false)
+  creadoPorId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tecnico     Usuario     @relation("EventosTecnico", fields: [tecnicoId], references: [id], onDelete: Cascade)
+  creadoPor   Usuario?    @relation("EventosCreadosPor", fields: [creadoPorId], references: [id])
+
+  @@map("eventos_calendario")
+}
+
+model Metrica {
+  id                          String   @id @default(uuid())
+  fecha                       DateTime @unique @db.Date
+  total_servicios             Int      @default(0)
+  completados                 Int      @default(0)
+  cancelados                  Int      @default(0)
+  pendientes                  Int      @default(0)
+  ingresos_del_dia            Float    @default(0)
+  tiempo_promedio_minutos     Float    @default(0)
+  mensajes_whatsapp_recibidos Int      @default(0)
+  mensajes_resueltos_bot      Int      @default(0)
+  calificacion_promedio       Float    @default(0)
+
+  @@map("metricas")
+}
+
+model Configuracion {
+  id                    String @id @default(uuid())
+  nombre_negocio        String @default("TechServ Pro")
+  telefono_negocio      String?
+  direccion_negocio     String?
+  logo_url              String?
+  hora_inicio           String @default("07:00")
+  hora_fin              String @default("20:00")
+  valor_diagnostico     Float  @default(40000)
+  mensaje_bienvenida    String @default("Bienvenido a TechServ Pro, servicio técnico especializado en aires y neveras.")
+  meses_recordatorio    Int    @default(6)
+  bot_debounce_ms       Int    @default(10000)
+  bot_max_espera_ms     Int    @default(45000)
+  bot_typing_espera_ms  Int    @default(8000)
+  bot_delay_respuesta_ms Int   @default(2000)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("configuracion")
+}

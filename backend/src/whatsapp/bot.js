@@ -1,0 +1,296 @@
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const QRCode = require('qrcode');
+const pino = require('pino');
+const path = require('path');
+const fs = require('fs');
+const prisma = require('../config/db');
+const { getIO } = require('../config/socket');
+const { manejarMensaje } = require('./flujo');
+const { escribiendoTimestamps } = require('./estado');
+
+const SESSION_DIR = path.join(__dirname, '../../whatsapp_session');
+let sock = null;
+let estado = { conectado: false, numero_conectado: null };
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let keepAliveTimer = null;
+const MAX_RECONNECT = 20;
+
+const sesiones = new Map();
+// Mapa LID → teléfono real (se llena al sincronizar contactos)
+const lidToPhone = new Map();
+
+const resolverTelefono = (remoteJid) => {
+  if (remoteJid.endsWith('@s.whatsapp.net')) {
+    return remoteJid.replace('@s.whatsapp.net', '');
+  }
+  if (remoteJid.endsWith('@lid')) {
+    const lidId = remoteJid.replace('@lid', '');
+    const phone = lidToPhone.get(lidId);
+    if (phone) return phone;
+    return lidId;
+  }
+  return remoteJid;
+};
+
+const iniciar = async () => {
+  if (!fs.existsSync(SESSION_DIR)) {
+    fs.mkdirSync(SESSION_DIR, { recursive: true });
+  }
+
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+  const { version } = await fetchLatestBaileysVersion();
+
+  sock = makeWASocket({
+    version,
+    auth: state,
+    logger: pino({ level: 'silent' }),
+    browser: ['TechServ Pro', 'Chrome', '1.0.0'],
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  // Mapear LID → teléfono desde todos los eventos posibles
+  const registrarContacto = (contact) => {
+    if (!contact) return;
+    const id = contact.id || '';
+    const lid = contact.lid || '';
+    // Caso 1: id es phone, lid es LID
+    if (id.endsWith('@s.whatsapp.net') && lid.endsWith('@lid')) {
+      lidToPhone.set(lid.replace('@lid', ''), id.replace('@s.whatsapp.net', ''));
+    }
+    // Caso 2: id es LID, buscar phone en otros campos
+    if (id.endsWith('@lid') && contact.phone) {
+      lidToPhone.set(id.replace('@lid', ''), contact.phone);
+    }
+  };
+
+  sock.ev.on('contacts.upsert', (contacts) => {
+    console.log(`[WhatsApp] contacts.upsert: ${contacts.length} contactos`);
+    if (contacts[0]) console.log('[WhatsApp] Ejemplo contacto:', JSON.stringify(Object.keys(contacts[0])));
+    for (const c of contacts) registrarContacto(c);
+    console.log(`[WhatsApp] LIDs mapeados: ${lidToPhone.size}`);
+  });
+
+  sock.ev.on('contacts.update', (updates) => {
+    for (const u of updates) registrarContacto(u);
+  });
+
+  sock.ev.on('messaging-history.set', (data) => {
+    console.log('[WhatsApp] messaging-history.set keys:', Object.keys(data));
+    const contacts = data.contacts || [];
+    const chats = data.chats || [];
+    console.log(`[WhatsApp] Historial: ${contacts.length} contactos, ${chats.length} chats`);
+    if (contacts[0]) console.log('[WhatsApp] Ejemplo contacto hist:', JSON.stringify(contacts[0]).substring(0, 300));
+    if (chats[0]) console.log('[WhatsApp] Ejemplo chat hist:', JSON.stringify(chats[0]).substring(0, 300));
+    for (const c of contacts) registrarContacto(c);
+    // También revisar chats por si traen participantes
+    for (const chat of chats) {
+      if (chat.id && chat.lid) registrarContacto(chat);
+      if (chat.participant) {
+        for (const p of chat.participant) registrarContacto(p);
+      }
+    }
+    console.log(`[WhatsApp] LIDs mapeados después de historial: ${lidToPhone.size}`);
+  });
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      const qrBase64 = await QRCode.toDataURL(qr);
+      console.log('[WhatsApp] QR generado — enviando al panel admin');
+      try {
+        const io = getIO();
+        const adminRoom = io.sockets.adapter.rooms.get('admin');
+        console.log(`[WhatsApp] Sockets en room admin: ${adminRoom ? adminRoom.size : 0}`);
+        io.to('admin').emit('whatsapp_qr', { qr: qrBase64 });
+        io.to('admin').emit('whatsapp_estado', { conectado: false });
+      } catch (err) {
+        console.error('[WhatsApp] Error emitiendo QR:', err.message);
+      }
+    }
+
+    if (connection === 'close') {
+      estado = { conectado: false, numero_conectado: null };
+      if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+      try { getIO().to('admin').emit('whatsapp_estado', { conectado: false }); } catch (_) {}
+
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+      if (shouldReconnect && reconnectAttempts < MAX_RECONNECT) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 60000); // capped at 60s
+        console.log(`[WhatsApp] Reconectando en ${delay / 1000}s (intento ${reconnectAttempts}/${MAX_RECONNECT})`);
+        reconnectTimer = setTimeout(iniciar, delay);
+      } else if (!shouldReconnect) {
+        console.log('[WhatsApp] Sesión cerrada. Escanea un nuevo QR.');
+        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+      } else {
+        console.log('[WhatsApp] Límite de reconexiones alcanzado. Borrando sesión para forzar nuevo QR.');
+        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        estado = { conectado: false, numero_conectado: null };
+        try { getIO().to('admin').emit('whatsapp_estado', { conectado: false, requiere_qr: true }); } catch (_) {}
+      }
+    }
+
+    if (connection === 'open') {
+      reconnectAttempts = 0;
+      const me = sock.user;
+      estado = { conectado: true, numero_conectado: me?.id?.split(':')[0] || null };
+      console.log(`[WhatsApp] Conectado como ${estado.numero_conectado}`);
+      try { getIO().to('admin').emit('whatsapp_estado', estado); } catch (_) {}
+
+      // Keep-alive: ping cada 2 minutos para evitar desconexiones silenciosas
+      if (keepAliveTimer) clearInterval(keepAliveTimer);
+      keepAliveTimer = setInterval(async () => {
+        if (!sock || !estado.conectado) { clearInterval(keepAliveTimer); keepAliveTimer = null; return; }
+        try {
+          await sock.sendPresenceUpdate('unavailable');
+        } catch (err) {
+          console.log('[WhatsApp] Keep-alive falló, reconectando:', err.message);
+        }
+      }, 2 * 60 * 1000);
+    }
+  });
+
+  // Detectar cuando el cliente está escribiendo
+  sock.ev.on('presence.update', (data) => {
+    try {
+      const id = data.id || (data.key?.remoteJid);
+      if (!id || id.endsWith('@g.us') || id.endsWith('@broadcast')) return;
+
+      const telefono = resolverTelefono(id);
+      const presences = data.presences || {};
+
+      for (const jid of Object.keys(presences)) {
+        const presence = presences[jid];
+        const estado = presence?.lastKnownPresence;
+        console.log(`[Presence] ${telefono} → ${estado}`);
+        if (estado === 'composing') {
+          escribiendoTimestamps.set(telefono, Date.now());
+          console.log(`[Typing] ✍️ ${telefono} está escribiendo`);
+        } else if (estado === 'paused') {
+          console.log(`[Typing] ⏸️ ${telefono} dejó de escribir`);
+        }
+      }
+    } catch (err) {
+      console.log('[Presence] Error:', err.message);
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const msg of messages) {
+      if (msg.key.fromMe || !msg.message) continue;
+
+      const remoteJid = msg.key.remoteJid;
+      if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@broadcast')) continue;
+
+      // Resolver teléfono real: preferir remoteJidAlt (tiene el número), fallback a remoteJid
+      const jidReal = msg.key.remoteJidAlt || remoteJid;
+      const telefono = jidReal.replace('@s.whatsapp.net', '').replace('@lid', '');
+
+      // Guardar mapeo LID→phone para uso futuro
+      if (remoteJid.endsWith('@lid') && msg.key.remoteJidAlt?.endsWith('@s.whatsapp.net')) {
+        const lidId = remoteJid.replace('@lid', '');
+        lidToPhone.set(lidId, telefono);
+      }
+
+      const contenido = msg.message.conversation
+        || msg.message.extendedTextMessage?.text
+        || '[media]';
+
+      console.log(`[WhatsApp] Mensaje de ${telefono} (${msg.pushName || 'sin nombre'}): ${contenido}`);
+
+      // Todo no-bloqueante para que el loop procese todos los mensajes del lote rápido
+      sock.presenceSubscribe(remoteJid).catch(() => {});
+
+      prisma.mensajeWhatsApp.create({
+        data: {
+          telefono,
+          direccion: 'entrante',
+          contenido,
+          tipo: 'texto',
+          estado: 'pendiente',
+          sesion_id: telefono,
+        },
+      }).catch(err => console.error('[WhatsApp] Error guardando mensaje:', err.message));
+
+      try {
+        getIO().to('admin').emit('whatsapp_mensaje', { telefono, contenido, timestamp: new Date() });
+        getIO().to('admin').emit('whatsapp_conversacion_update', { telefono });
+      } catch (_) {}
+
+      manejarMensaje(sock, telefono, jidReal, contenido, sesiones).catch(err => {
+        console.error('[WhatsApp] Error manejando mensaje:', err.message);
+      });
+    }
+  });
+
+  return sock;
+};
+
+const enviarMensaje = async (telefono, mensaje) => {
+  if (!sock || !estado.conectado) {
+    console.log(`[WhatsApp] No conectado. Mensaje para ${telefono}: ${mensaje}`);
+    return false;
+  }
+
+  const jid = telefono.includes('@') ? telefono : `${telefono}@s.whatsapp.net`;
+  await sock.sendMessage(jid, { text: mensaje });
+
+  await prisma.mensajeWhatsApp.create({
+    data: {
+      telefono: telefono.replace(/@s\.whatsapp\.net|@lid/g, ''),
+      direccion: 'saliente',
+      contenido: mensaje,
+      tipo: 'texto',
+      estado: 'procesado',
+    },
+  });
+
+  return true;
+};
+
+const getEstado = () => estado;
+
+const conectar = async () => {
+  if (estado.conectado) return;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempts = 0;
+  if (sock) {
+    try { sock.end(undefined); } catch (_) {}
+    sock = null;
+  }
+  estado = { conectado: false, numero_conectado: null };
+  await iniciar();
+};
+
+const desconectar = async () => {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+  reconnectAttempts = MAX_RECONNECT;
+  if (sock) {
+    try { sock.end(undefined); } catch (_) {}
+    sock = null;
+  }
+  if (fs.existsSync(SESSION_DIR)) {
+    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+  }
+  estado = { conectado: false, numero_conectado: null };
+  try { getIO().to('admin').emit('whatsapp_estado', estado); } catch (_) {}
+};
+
+module.exports = { iniciar, enviarMensaje, getEstado, conectar, desconectar };
