@@ -1,2 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "openssl"]
+
+[phases.build]
+cmds = ["npm install", "npx prisma generate"]
+
 [start]
-cmd = "npx prisma generate && node server.js"
+cmd = "node server.js"
