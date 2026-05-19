@@ -191,7 +191,7 @@ export const PerfilTecnico = () => {
             <h3 className="font-semibold text-slate-800 text-sm">Últimos Servicios</h3>
           </div>
           <div className="divide-y">
-            {servicios.map(s => (
+            {servicios.map((s: Servicio) => (
               <div key={s.id} className="px-4 py-3 flex items-center gap-3">
                 <div className="h-9 w-9 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                   <Wrench className="h-4 w-4 text-slate-500" />
