@@ -1,0 +1,2 @@
+[start]
+cmd = "npx prisma generate && node server.js"
