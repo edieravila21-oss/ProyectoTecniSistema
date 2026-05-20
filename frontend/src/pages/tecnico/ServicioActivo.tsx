@@ -331,14 +331,7 @@ export const ServicioActivo = () => {
         ))}
       </div>
 
-      {/* Timer */}
-      {servicio.fecha_inicio_real && pasoActual >= 1 && servicio.estado !== 'completado' && (
-        <div className="flex items-center justify-center gap-2 py-2 bg-orange-50 rounded-xl border border-orange-100">
-          <Clock className="h-4 w-4 text-orange-500 animate-pulse" />
-          <span className="font-mono text-sm font-bold text-orange-600">{tiempoServicio}</span>
-          <span className="text-xs text-orange-400">en servicio</span>
-        </div>
-      )}
+      {/* Timer — hidden from UI but still runs for SLA tracking */}
 
       {/* PASO 0 — EN CAMINO */}
       {pasoActual === 0 && (
@@ -910,48 +903,50 @@ export const ServicioActivo = () => {
               {repuestos.length > 0 && (
                 <div className="space-y-2">
                   {repuestos.map((r, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-slate-50 rounded-xl p-2.5 border border-slate-100">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{r.nombre}</p>
+                    <div key={idx} className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-slate-700">{r.nombre}</p>
+                        <button
+                          className="h-7 w-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
+                          onClick={() => setRepuestos(repuestos.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-sm font-bold"
-                          onClick={() => {
-                            if (r.cantidad > 1) {
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <button
+                            className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-sm font-bold"
+                            onClick={() => {
+                              if (r.cantidad > 1) {
+                                const copy = [...repuestos];
+                                copy[idx] = { ...copy[idx], cantidad: copy[idx].cantidad - 1 };
+                                setRepuestos(copy);
+                              }
+                            }}
+                          >−</button>
+                          <span className="text-sm font-bold w-5 text-center text-slate-700">{r.cantidad}</span>
+                          <button
+                            className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-sm font-bold"
+                            onClick={() => {
                               const copy = [...repuestos];
-                              copy[idx] = { ...copy[idx], cantidad: copy[idx].cantidad - 1 };
+                              copy[idx] = { ...copy[idx], cantidad: copy[idx].cantidad + 1 };
                               setRepuestos(copy);
-                            }
-                          }}
-                        >−</button>
-                        <span className="text-sm font-bold w-5 text-center text-slate-700">{r.cantidad}</span>
-                        <button
-                          className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-sm font-bold"
-                          onClick={() => {
+                            }}
+                          >+</button>
+                        </div>
+                        <Input
+                          type="number"
+                          value={r.precio_unitario || ''}
+                          onChange={(e) => {
                             const copy = [...repuestos];
-                            copy[idx] = { ...copy[idx], cantidad: copy[idx].cantidad + 1 };
+                            copy[idx] = { ...copy[idx], precio_unitario: parseFloat(e.target.value) || 0 };
                             setRepuestos(copy);
                           }}
-                        >+</button>
+                          className="h-7 flex-1 text-xs text-right"
+                          placeholder="$"
+                        />
                       </div>
-                      <Input
-                        type="number"
-                        value={r.precio_unitario || ''}
-                        onChange={(e) => {
-                          const copy = [...repuestos];
-                          copy[idx] = { ...copy[idx], precio_unitario: parseFloat(e.target.value) || 0 };
-                          setRepuestos(copy);
-                        }}
-                        className="h-7 w-20 text-xs text-right shrink-0"
-                        placeholder="$"
-                      />
-                      <button
-                        className="h-7 w-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
-                        onClick={() => setRepuestos(repuestos.filter((_, i) => i !== idx))}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                   ))}
                 </div>
