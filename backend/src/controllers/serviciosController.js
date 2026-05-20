@@ -134,6 +134,19 @@ const crear = async (req, res, next) => {
           usuarioId: req.usuario?.id ?? null,
         },
       });
+
+      const tecnicoData = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
+      if (tecnicoData?.telefono) {
+        const { enviarMensaje } = require('../whatsapp/bot');
+        const cliente = servicio.cliente?.nombre || 'Cliente';
+        const equipo = servicio.equipo
+          ? `${servicio.equipo.tipo === 'aire_acondicionado' ? 'aire acondicionado' : servicio.equipo.tipo === 'nevera' ? 'nevera' : 'equipo'} ${servicio.equipo.marca || ''}`.trim()
+          : 'equipo';
+        const fecha = servicio.fecha_programada ? new Date(servicio.fecha_programada).toLocaleDateString('es-CO') : 'Por definir';
+        const hora = servicio.hora_inicio || 'Por definir';
+        const msg = `🔧 *RefriElectri Pro — Nuevo Servicio Asignado*\n\n👤 Cliente: *${cliente}*\n🏠 Dirección: ${servicio.direccion_servicio || 'Por definir'}\n📅 Fecha: ${fecha}\n🕐 Hora: ${hora}\n🔌 Equipo: ${equipo}\n⚠️ Falla: ${servicio.descripcion_falla || 'No especificada'}\n\nRevisa tu app para más detalles.`;
+        try { await enviarMensaje(tecnicoData.telefono, msg); } catch (err) { console.error('[WhatsApp] Error notificando técnico:', err.message); }
+      }
     }
 
     try { getIO().to('admin').emit('nuevo_servicio', servicio); } catch (_) {}
@@ -363,6 +376,18 @@ const asignarTecnico = async (req, res, next) => {
         usuarioId: req.usuario.id,
       },
     });
+
+    if (tecnico.telefono) {
+      const { enviarMensaje } = require('../whatsapp/bot');
+      const cliente = servicio.cliente?.nombre || 'Cliente';
+      const equipo = servicio.equipo
+        ? `${servicio.equipo.tipo === 'aire_acondicionado' ? 'aire acondicionado' : servicio.equipo.tipo === 'nevera' ? 'nevera' : 'equipo'} ${servicio.equipo.marca || ''}`.trim()
+        : 'equipo';
+      const fecha = servicio.fecha_programada ? new Date(servicio.fecha_programada).toLocaleDateString('es-CO') : 'Por definir';
+      const hora = servicio.hora_inicio || 'Por definir';
+      const msg = `🔧 *RefriElectri Pro — Nuevo Servicio Asignado*\n\n👤 Cliente: *${cliente}*\n🏠 Dirección: ${servicio.direccion_servicio || 'Por definir'}\n📅 Fecha: ${fecha}\n🕐 Hora: ${hora}\n🔌 Equipo: ${equipo}\n⚠️ Falla: ${servicio.descripcion_falla || 'No especificada'}\n\nRevisa tu app para más detalles.`;
+      try { await enviarMensaje(tecnico.telefono, msg); } catch (err) { console.error('[WhatsApp] Error notificando técnico:', err.message); }
+    }
 
     try { getIO().to('admin').emit('servicio_actualizado', servicio); } catch (_) {}
 
