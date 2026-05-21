@@ -81,7 +81,7 @@ export const ServicioActivo = () => {
   const [diagEstado, setDiagEstado] = useState<'observacion' | 'falla' | null>(null);
   const [diagValue, setDiagValue] = useState('');
   const [showCorreccion, setShowCorreccion] = useState(false);
-  const [correccionData, setCorreccionData] = useState({ marca: '', modelo: '', serial: '', capacidad: '' });
+  const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', modelo: '', serial: '', capacidad: '', tecnologia: '' });
   const [fallaConfirmada, setFallaConfirmada] = useState<boolean | null>(null);
   const [diagnosticoFinal, setDiagnosticoFinal] = useState('');
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
@@ -581,9 +581,11 @@ export const ServicioActivo = () => {
                                     setShowCorreccion(true);
                                     setCorreccionData({
                                       marca: servicio.equipo?.marca || '',
+                                      marcaOtra: '',
                                       modelo: servicio.equipo?.modelo || '',
                                       serial: servicio.equipo?.serial || '',
                                       capacidad: servicio.equipo?.notas || '',
+                                      tecnologia: '',
                                     });
                                   }}
                                 >
@@ -598,12 +600,83 @@ export const ServicioActivo = () => {
                           <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                             <p className="text-xs font-semibold text-red-700">Corregir datos del equipo:</p>
                             <div className="space-y-1.5">
-                              <Input
-                                placeholder="Marca"
+                              <select
                                 value={correccionData.marca}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, marca: e.target.value }))}
-                                className="h-8 text-xs bg-white"
-                              />
+                                onChange={(e) => setCorreccionData(d => ({ ...d, marca: e.target.value, marcaOtra: '' }))}
+                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">Seleccionar marca</option>
+                                {servicio.equipo?.tipo === 'aire_acondicionado' ? (
+                                  <>
+                                    <option value="Samsung">Samsung</option>
+                                    <option value="LG">LG</option>
+                                    <option value="Carrier">Carrier</option>
+                                    <option value="Daikin">Daikin</option>
+                                    <option value="Midea">Midea</option>
+                                    <option value="York">York</option>
+                                    <option value="Trane">Trane</option>
+                                    <option value="Lennox">Lennox</option>
+                                    <option value="Panasonic">Panasonic</option>
+                                    <option value="Gree">Gree</option>
+                                    <option value="Hisense">Hisense</option>
+                                    <option value="TCL">TCL</option>
+                                    <option value="Aux">Aux</option>
+                                    <option value="Whirlpool">Whirlpool</option>
+                                    <option value="Electrolux">Electrolux</option>
+                                  </>
+                                ) : (
+                                  <>
+                                    <option value="Samsung">Samsung</option>
+                                    <option value="LG">LG</option>
+                                    <option value="Whirlpool">Whirlpool</option>
+                                    <option value="Mabe">Mabe</option>
+                                    <option value="Haceb">Haceb</option>
+                                    <option value="Electrolux">Electrolux</option>
+                                    <option value="Challenger">Challenger</option>
+                                    <option value="Indurama">Indurama</option>
+                                    <option value="Bosch">Bosch</option>
+                                    <option value="Frigidaire">Frigidaire</option>
+                                    <option value="Panasonic">Panasonic</option>
+                                    <option value="Daewoo">Daewoo</option>
+                                  </>
+                                )}
+                                <option value="Otra">Otra</option>
+                              </select>
+                              {correccionData.marca === 'Otra' && (
+                                <Input
+                                  placeholder="Escribir marca"
+                                  value={correccionData.marcaOtra}
+                                  onChange={(e) => setCorreccionData(d => ({ ...d, marcaOtra: e.target.value }))}
+                                  className="h-8 text-xs bg-white"
+                                />
+                              )}
+                              {servicio.equipo?.tipo === 'aire_acondicionado' && (
+                                <select
+                                  value={correccionData.tecnologia}
+                                  onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
+                                  className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option value="">Tipo de tecnología</option>
+                                  <option value="Inverter">Inverter</option>
+                                  <option value="Convencional">Convencional</option>
+                                </select>
+                              )}
+                              {servicio.equipo?.tipo === 'aire_acondicionado' && (
+                                <select
+                                  value={correccionData.capacidad}
+                                  onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
+                                  className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option value="">Capacidad (BTU)</option>
+                                  <option value="9,000 BTU">9,000 BTU</option>
+                                  <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
+                                  <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
+                                  <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
+                                  <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
+                                  <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
+                                  <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
+                                </select>
+                              )}
                               <Input
                                 placeholder="Modelo"
                                 value={correccionData.modelo}
@@ -614,12 +687,6 @@ export const ServicioActivo = () => {
                                 placeholder="Serial"
                                 value={correccionData.serial}
                                 onChange={(e) => setCorreccionData(d => ({ ...d, serial: e.target.value }))}
-                                className="h-8 text-xs bg-white"
-                              />
-                              <Input
-                                placeholder="Capacidad (BTU, Ton, etc.)"
-                                value={correccionData.capacidad}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
                                 className="h-8 text-xs bg-white"
                               />
                             </div>
@@ -635,8 +702,15 @@ export const ServicioActivo = () => {
                                 className="flex-1 h-8 text-xs bg-red-600 hover:bg-red-700"
                                 onClick={async () => {
                                   if (!id) return;
+                                  const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra : correccionData.marca;
+                                  const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
                                   try {
-                                    await corregirEquipo(id, correccionData);
+                                    await corregirEquipo(id, {
+                                      marca,
+                                      modelo: correccionData.modelo,
+                                      serial: correccionData.serial,
+                                      capacidad: capacidad || undefined,
+                                    });
                                     toast.success('Datos del equipo corregidos');
                                     setShowCorreccion(false);
                                     await handleChecklistItem(item.id);
