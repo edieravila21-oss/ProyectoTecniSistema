@@ -134,7 +134,6 @@ const procesarBuffer = async (telefono, sesiones) => {
 
   const { mensajes, remoteJid, sock } = buffer;
   const contenidoCompleto = mensajes.join('\n');
-  const ultimoMensaje = mensajes[mensajes.length - 1];
 
   const tiempoTotal = ((Date.now() - buffer.inicio) / 1000).toFixed(1);
   console.log(`[Debounce] 🤖 Procesando ${mensajes.length} mensajes de ${telefono} (esperó ${tiempoTotal}s total)`);
@@ -166,6 +165,7 @@ const procesarBuffer = async (telefono, sesiones) => {
 
   const config = await prisma.configuracion.findFirst();
   const negocio = config?.nombre_negocio || process.env.NOMBRE_NEGOCIO || 'RefriElectri Pro';
+  const valorDiagnostico = config?.valor_diagnostico || 40000;
 
   // ═══════════════════════════════════════════════
   // OBTENER CONTEXTO DEL CLIENTE
@@ -205,7 +205,30 @@ const procesarBuffer = async (telefono, sesiones) => {
   // ═══════════════════════════════════════════════
   if (sesion.paso === 'elegir_fecha') {
     const slots = sesion.datos.slots || [];
-    const opcionesTexto = slots.map((s, i) => `${i + 1}. ${s.diaLabel} de ${s.label}`).join('\n');
+    const opcionesTexto = slots.map((s, i) => `${i + 1}. ${s.diaLabel} de ${s.label} — 👨‍🔧 ${s.tecnicoNombre}`).join('\n');
+
+    // Detectar si el cliente quiere salir del flujo de horarios
+    const contenidoLower = contenidoCompleto.toLowerCase();
+    const quiereSalir = /ningun|ningún|no me sirve|no puedo|cancel|no quiero|hablar con|humano|asesor|llamar|llam[ea]/i.test(contenidoLower);
+
+    if (quiereSalir) {
+      await enviar(`Entiendo, ningún horario te funciona. Voy a pasar tu caso a un asesor para que te ofrezca más opciones. Te contactará pronto 🙌`);
+      await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: contenidoCompleto });
+      try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: 'Horarios no le sirven' }); } catch (_) {}
+      sesiones.delete(telefono);
+      return;
+    }
+
+    // Detectar preguntas fuera de contexto (precio, técnico, etc.)
+    const preguntaFuera = /precio|costo|cuánto|cuanto|técnico|tecnico|quien viene/i.test(contenidoLower);
+    if (preguntaFuera) {
+      let respExtra = '';
+      if (/precio|costo|cuánto|cuanto/i.test(contenidoLower)) {
+        respExtra = `El diagnóstico tiene un costo de ${formatCurrency(valorDiagnostico)}. El valor de la reparación depende de lo que encuentre el técnico.\n\n`;
+      }
+      await enviar(`${respExtra}¿Cuál horario te queda mejor? Responde con el número del 1 al ${slots.length} 😊\n\n${opcionesTexto}`);
+      return;
+    }
 
     // La IA interpreta la respuesta del cliente
     const respIA = await generarRespuestaCompleta({
@@ -215,21 +238,41 @@ const procesarBuffer = async (telefono, sesiones) => {
       datosRecolectados: sesion.datos,
       mensaje: `El cliente debe elegir un horario de estas opciones:\n${opcionesTexto}\n\nEl cliente respondió: "${contenidoCompleto}"\n\nResponde SOLO con el número de la opción que eligió (1, 2, 3 o 4). Si no se entiende qué eligió, responde "0".`,
       contextoCliente: '',
+      valorDiagnostico,
     });
 
     const opcion = parseInt((respIA || '').match(/(\d+)/)?.[1]) || 0;
 
     if (!opcion || opcion < 1 || opcion > slots.length) {
-      await enviar(`Disculpa, no entendí cuál horario prefieres 😅 ¿Me dices el número? Del 1 al ${slots.length}`);
+      await enviar(`No logré identificar el horario. ¿Me dices el número del 1 al ${slots.length}? 😊\n\n${opcionesTexto}\n\nSi ninguno te sirve, escribe "ninguno" y te paso con un asesor.`);
       return;
     }
 
     const slotElegido = slots[opcion - 1];
-    const tecnico = await asignarTecnicoParaSlot(sesion.datos.tipo_equipo || 'otro', slotElegido.fechaKey, slotElegido.hora_inicio);
-    const tecnicoId = tecnico?.id || slotElegido.tecnicoId;
-    const tecnicoNombre = tecnico?.nombre || slotElegido.tecnicoNombre;
 
-    const valorDiag = config?.valor_diagnostico || 40000;
+    // Verificar que el slot siga disponible (evitar doble booking)
+    const tecnico = await asignarTecnicoParaSlot(sesion.datos.tipo_equipo || 'otro', slotElegido.fechaKey, slotElegido.hora_inicio);
+    if (!tecnico) {
+      const nuevosSlots = await obtenerDisponibilidad(sesion.datos.tipo_equipo || 'otro', 7, 4);
+      if (nuevosSlots.length === 0) {
+        await enviar('Lo siento, ese horario ya fue tomado y no hay más disponibilidad próximamente 😔 Voy a pasar tu caso a un asesor.');
+        await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: 'Slot ya no disponible' });
+        try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: 'Sin disponibilidad' }); } catch (_) {}
+        sesiones.delete(telefono);
+        return;
+      }
+      sesion.datos.slots = nuevosSlots.map(s => ({
+        fecha: s.fecha, fechaKey: s.fechaKey, hora_inicio: s.hora_inicio, hora_fin: s.hora_fin,
+        diaLabel: s.diaLabel, label: s.label, tecnicoId: s.tecnico.id, tecnicoNombre: s.tecnico.nombre,
+      }));
+      const nuevasOpciones = nuevosSlots.map((s, i) => `${i + 1}. ${s.diaLabel} de ${s.label} — 👨‍🔧 ${s.tecnico.nombre}`);
+      await enviar(`Ese horario ya fue tomado 😅 Pero tengo estos otros disponibles:\n\n${nuevasOpciones.join('\n')}\n\n¿Cuál te sirve?`);
+      return;
+    }
+
+    const tecnicoId = tecnico.id;
+    const tecnicoNombre = tecnico.nombre;
+
     const tipoLabel = { nevera: 'Nevera', aire_acondicionado: 'Aire acondicionado', otro: 'Otro equipo' };
 
     let clienteId = sesion.datos.clienteId;
@@ -237,7 +280,7 @@ const procesarBuffer = async (telefono, sesiones) => {
       const nuevoCliente = await prisma.cliente.upsert({
         where: { telefono },
         update: { nombre: sesion.datos.nombre || undefined, direccion_principal: sesion.datos.direccion || undefined },
-        create: { nombre: sesion.datos.nombre, telefono, direccion_principal: sesion.datos.direccion },
+        create: { nombre: sesion.datos.nombre || 'Cliente WhatsApp', telefono, direccion_principal: sesion.datos.direccion },
       });
       clienteId = nuevoCliente.id;
     }
@@ -259,11 +302,11 @@ const procesarBuffer = async (telefono, sesiones) => {
       data: {
         clienteId, equipoId, tecnicoId,
         estado: 'asignado',
-        descripcion_falla: sesion.datos.falla,
+        descripcion_falla: sesion.datos.falla || 'No especificada',
         fecha_programada: new Date(slotElegido.fecha),
         hora_inicio: slotElegido.hora_inicio, hora_fin: slotElegido.hora_fin,
-        direccion_servicio: sesion.datos.direccion,
-        valor_estimado: valorDiag,
+        direccion_servicio: sesion.datos.direccion || 'Por confirmar',
+        valor_estimado: valorDiagnostico,
         origen: 'whatsapp',
         checklist: { create: checklistItems },
         eventos: {
@@ -277,7 +320,7 @@ const procesarBuffer = async (telefono, sesiones) => {
     });
 
     await enviar(
-      `¡Listo ${sesion.datos.nombre}! Tu servicio quedó agendado:\n📅 ${slotElegido.diaLabel} de ${slotElegido.label}\n📍 ${sesion.datos.direccion}\n🔧 ${tipoLabel[sesion.datos.tipo_equipo] || 'Equipo'}${sesion.datos.marca ? ' ' + sesion.datos.marca : ''}\n👨‍🔧 Técnico: ${tecnicoNombre}\n💰 Diagnóstico: ${formatCurrency(valorDiag)}\n\nTe avisaremos antes de la llegada del técnico. ¡Gracias por confiar en ${negocio}!`
+      `¡Listo ${sesion.datos.nombre || 'cliente'}! Tu servicio quedó agendado:\n📅 ${slotElegido.diaLabel} de ${slotElegido.label}\n📍 ${sesion.datos.direccion || 'Por confirmar'}\n🔧 ${tipoLabel[sesion.datos.tipo_equipo] || 'Equipo'}${sesion.datos.marca ? ' ' + sesion.datos.marca : ''}\n👨‍🔧 Técnico: ${tecnicoNombre}\n💰 Diagnóstico: ${formatCurrency(valorDiagnostico)}\n\nTe avisaremos antes de la llegada del técnico. ¡Gracias por confiar en ${negocio}!`
     );
 
     try {
@@ -285,7 +328,7 @@ const procesarBuffer = async (telefono, sesiones) => {
       if (tecnicoUser?.telefono) {
         const tecJid = `${tecnicoUser.telefono}@s.whatsapp.net`;
         await sock.sendMessage(tecJid, {
-          text: `📋 *Nuevo servicio asignado*\n\n👤 Cliente: ${sesion.datos.nombre}\n📍 Dirección: ${sesion.datos.direccion}\n📅 Fecha: ${slotElegido.diaLabel}\n🕐 Horario: ${slotElegido.label}\n🔧 Equipo: ${tipoLabel[sesion.datos.tipo_equipo] || 'Equipo'}${sesion.datos.marca ? ' ' + sesion.datos.marca : ''}\n📝 Problema: ${sesion.datos.falla}\n💰 Diagnóstico: ${formatCurrency(valorDiag)}`,
+          text: `📋 *Nuevo servicio asignado*\n\n👤 Cliente: ${sesion.datos.nombre || 'Cliente'}\n📍 Dirección: ${sesion.datos.direccion || 'Por confirmar'}\n📅 Fecha: ${slotElegido.diaLabel}\n🕐 Horario: ${slotElegido.label}\n🔧 Equipo: ${tipoLabel[sesion.datos.tipo_equipo] || 'Equipo'}${sesion.datos.marca ? ' ' + sesion.datos.marca : ''}\n📝 Problema: ${sesion.datos.falla || 'No especificada'}\n💰 Diagnóstico: ${formatCurrency(valorDiagnostico)}`,
         });
       }
     } catch (err) {
@@ -308,8 +351,40 @@ const procesarBuffer = async (telefono, sesiones) => {
       data: { estado: 'procesado' },
     });
 
-    sesiones.delete(telefono);
+    // Cambiar a paso post-agendamiento (no borrar sesión inmediatamente)
+    sesion.paso = 'post_agendamiento';
     return;
+  }
+
+  // ═══════════════════════════════════════════════
+  // PASO: POST AGENDAMIENTO — evitar servicios fantasma
+  // ═══════════════════════════════════════════════
+  if (sesion.paso === 'post_agendamiento') {
+    const contenidoLower = contenidoCompleto.toLowerCase();
+
+    // Respuestas casuales → responder amablemente sin crear nada
+    const esCasual = /^(ok|listo|gracias|está bien|esta bien|bueno|vale|perfecto|los espero|espero|chao|bye|adiós|adios|dale|genial|bien|este|el que|ya)\b/i.test(contenidoLower.trim());
+    if (esCasual) {
+      await enviar(`¡Con gusto! Si necesitas algo más, escríbenos 😊`);
+      await upsertConversacion(telefono, { ultimo_mensaje: contenidoCompleto });
+      sesiones.delete(telefono);
+      return;
+    }
+
+    // Si quiere otro servicio, reiniciar conversación
+    const quiereOtroServicio = /otro servicio|otro equipo|también|tambien|mantenimiento|revisión|revision|necesito|quiero que|programar|agendar/i.test(contenidoLower);
+    if (quiereOtroServicio) {
+      sesion.paso = 'conversar';
+      sesion.datos = { nombre: sesion.datos.nombre, clienteId: sesion.datos.clienteId };
+      // Continuar al paso conversar (no return, caerá al bloque de abajo)
+    } else {
+      // Cualquier otra cosa (cancelar, cambiar técnico, preguntas) → escalar
+      await enviar(`Voy a pasar tu consulta a un asesor para ayudarte mejor. Te contactará pronto 🙌`);
+      await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: contenidoCompleto });
+      try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: contenidoCompleto }); } catch (_) {}
+      sesiones.delete(telefono);
+      return;
+    }
   }
 
   // ═══════════════════════════════════════════════
@@ -330,6 +405,7 @@ const procesarBuffer = async (telefono, sesiones) => {
       datosRecolectados: sesion.datos,
       mensaje: contenidoCompleto,
       contextoCliente,
+      valorDiagnostico,
     });
     const tiempoIA = ((Date.now() - inicioIA) / 1000).toFixed(1);
     console.log(`[IA] ✅ DeepSeek respondió en ${tiempoIA}s`);
@@ -361,11 +437,26 @@ const procesarBuffer = async (telefono, sesiones) => {
     const referenciaMatch = resp.match(/\[REFERENCIA:([^\]]+)\]/);
     if (referenciaMatch) sesion.datos.referencia = referenciaMatch[1].trim();
 
+    // Validar datos mínimos antes de agendar
     if (resp.includes('[AGENDAR]')) {
+      if (!sesion.datos.tipo_equipo || !sesion.datos.direccion) {
+        const falta = [];
+        if (!sesion.datos.tipo_equipo) falta.push('qué tipo de equipo es (aire o nevera)');
+        if (!sesion.datos.direccion) falta.push('la dirección para el servicio');
+        const mensajeLimpio = resp
+          .replace(/\[.*?\]/g, '')
+          .trim();
+        await upsertConversacion(telefono, { estado: 'en_conversacion', ultimo_mensaje: contenidoCompleto });
+        await enviar(mensajeLimpio || `Me falta saber ${falta.join(' y ')} para poder agendar. ¿Me ayudas con eso? 😊`);
+        return;
+      }
       return await procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, config, negocio);
     }
 
     if (resp.includes('[ESCALAR]')) {
+      const mensajeLimpio = resp.replace(/\[.*?\]/g, '').trim();
+      if (mensajeLimpio) await enviar(mensajeLimpio);
+      else await enviar(`Voy a pasar tu caso a un asesor para ayudarte mejor. Te contactará pronto 🙌`);
       await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: contenidoCompleto });
       try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre }); } catch (_) {}
       sesiones.delete(telefono);
@@ -410,12 +501,12 @@ async function procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, c
     diaLabel: s.diaLabel, label: s.label, tecnicoId: s.tecnico.id, tecnicoNombre: s.tecnico.nombre,
   }));
 
-  const resumen = `Perfecto, te confirmo los datos:\n🔧 Equipo: ${tipoLabel[tipo] || tipo}${sesion.datos.marca ? ' ' + sesion.datos.marca : ''}\n📝 Problema: ${sesion.datos.falla}\n📍 Dirección: ${sesion.datos.direccion}${sesion.datos.referencia ? '\n📍 Referencia: ' + sesion.datos.referencia : ''}`;
+  const resumen = `Perfecto, te confirmo los datos:\n🔧 Equipo: ${tipoLabel[tipo] || tipo}${sesion.datos.marca ? ' ' + sesion.datos.marca : ''}\n📝 Problema: ${sesion.datos.falla || 'No especificado'}\n📍 Dirección: ${sesion.datos.direccion || 'Por confirmar'}${sesion.datos.referencia ? '\n📍 Referencia: ' + sesion.datos.referencia : ''}`;
 
-  const opciones = slots.map((s, i) => `${i + 1}. ${s.diaLabel} de ${s.label}`);
+  const opciones = slots.map((s, i) => `${i + 1}. ${s.diaLabel} de ${s.label} — 👨‍🔧 ${s.tecnico.nombre}`);
 
   sesion.paso = 'elegir_fecha';
-  await enviar(`${resumen}\n\nConsulté la agenda y tenemos técnicos disponibles:\n${opciones.join('\n')}\n\n¿Cuál horario te funciona mejor? Responde con el número`);
+  await enviar(`${resumen}\n\nConsulté la agenda y tenemos técnicos disponibles:\n${opciones.join('\n')}\n\n¿Cuál horario te funciona mejor? Responde con el número 😊\nSi ninguno te sirve, escribe "ninguno".`);
 }
 
 module.exports = { manejarMensaje };
