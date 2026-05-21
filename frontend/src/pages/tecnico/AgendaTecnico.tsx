@@ -11,7 +11,7 @@ import {
   Phone, MapPin, Navigation, Wrench, Search, Star,
   CheckCircle2, ArrowRight, TrendingUp,
   Calendar, Snowflake, MessageSquare,
-  FileText, Plus, Trash2,
+  Plus, Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -363,8 +363,8 @@ export const AgendaTecnico = () => {
                           disabled={accionandoId === s.id}
                           className="shrink-0 h-11 px-3.5 rounded-xl bg-green-600 hover:bg-green-700 flex items-center gap-1.5 text-xs font-bold text-white transition-colors shadow-sm animate-pulse disabled:opacity-60"
                         >
-                          <MapPin className="h-4 w-4" />
-                          <span>Llegué</span>
+                          <Wrench className="h-4 w-4" />
+                          <span>Iniciar servicio</span>
                         </button>
                       )}
                     </div>
@@ -441,19 +441,12 @@ export const AgendaTecnico = () => {
                         {s.cliente?.telefono && (
                           <a
                             href={`tel:${s.cliente.telefono}`}
-                            className="h-11 px-4 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-600 transition-colors shrink-0"
+                            className="h-11 flex-1 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-600 transition-colors"
                           >
                             <Phone className="h-4 w-4" />
                             Llamar
                           </a>
                         )}
-                        <button
-                          onClick={() => navigate(`/tecnico/servicio/${s.id}`)}
-                          className="h-11 flex-1 rounded-xl bg-slate-700 hover:bg-slate-800 flex items-center justify-center gap-1.5 text-sm font-semibold text-white transition-colors shadow-sm"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Ver detalle
-                        </button>
                       </div>
                     </div>
                   )}
