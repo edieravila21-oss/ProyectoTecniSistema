@@ -234,8 +234,10 @@ const procesarBuffer = async (telefono, sesiones) => {
 
     let clienteId = sesion.datos.clienteId;
     if (!clienteId) {
-      const nuevoCliente = await prisma.cliente.create({
-        data: { nombre: sesion.datos.nombre, telefono, direccion_principal: sesion.datos.direccion },
+      const nuevoCliente = await prisma.cliente.upsert({
+        where: { telefono },
+        update: { nombre: sesion.datos.nombre || undefined, direccion_principal: sesion.datos.direccion || undefined },
+        create: { nombre: sesion.datos.nombre, telefono, direccion_principal: sesion.datos.direccion },
       });
       clienteId = nuevoCliente.id;
     }
