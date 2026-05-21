@@ -1,6 +1,9 @@
 import api from './client';
 import type { ApiResponse, Usuario } from '@/types';
 
+export const verificarEmailApi = (email: string) =>
+  api.post<ApiResponse<{ nombre: string }>>('/auth/verificar-email', { email });
+
 export const loginApi = (email: string, pin: string) =>
   api.post<ApiResponse<{ token: string; usuario: Usuario }>>('/auth/login', { email, pin });
 

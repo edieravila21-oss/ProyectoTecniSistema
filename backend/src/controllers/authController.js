@@ -162,4 +162,18 @@ const cambiarPin = async (req, res, next) => {
   }
 };
 
-module.exports = { login, me, refresh, forgotPassword, resetPassword, cambiarPin };
+const verificarEmail = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'Email es requerido' });
+    const usuario = await prisma.usuario.findUnique({ where: { email }, select: { id: true, nombre: true, activo: true } });
+    if (!usuario || !usuario.activo) {
+      return res.status(404).json({ success: false, error: 'No se encontró una cuenta con ese correo' });
+    }
+    res.json({ success: true, data: { nombre: usuario.nombre } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { login, me, refresh, forgotPassword, resetPassword, cambiarPin, verificarEmail };
