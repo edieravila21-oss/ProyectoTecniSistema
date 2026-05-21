@@ -11,6 +11,7 @@ export const Login = () => {
   const [nombre, setNombre] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hovering, setHovering] = useState(false);
   const { login } = useAuthStore();
   const navigate = useNavigate();
 
@@ -66,9 +67,13 @@ export const Login = () => {
   return (
     <div className="min-h-dvh flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: 'url(/bg-login.png)' }} />
-      <div className="absolute inset-0 backdrop-blur-md bg-slate-950/70" />
+      <div className={`absolute inset-0 transition-all duration-700 ease-in-out ${hovering ? 'backdrop-blur-sm bg-slate-950/40' : 'backdrop-blur-md bg-slate-950/70'}`} />
 
-      <div className="w-full max-w-sm relative z-10">
+      <div
+        className="w-full max-w-sm relative z-10"
+        onMouseEnter={() => setHovering(false)}
+        onMouseLeave={() => setHovering(true)}
+      >
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 mb-5">
             <Zap className="h-8 w-8 text-white" />
