@@ -7,6 +7,26 @@ const { escribiendoTimestamps } = require('./estado');
 const { formatCurrency } = require('../utils/helpers');
 
 const TIMEOUT_MS = 30 * 60 * 1000;
+const ASESORA_TELEFONO = '573234465603';
+const ASESORA_NOMBRE = 'Alejandra';
+
+const escalarAHumano = async (sock, telefono, sesion, razon, enviar, sesiones) => {
+  const nombre = sesion?.datos?.nombre || 'Cliente';
+  await enviar(`Voy a pasar tu caso a ${ASESORA_NOMBRE}, nuestra asesora. Ella te contactará pronto 🙌`);
+  await upsertConversacion(telefono, { estado: 'escalado', bot_activo: false, ultimo_mensaje: razon });
+  try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre, razon }); } catch (_) {}
+
+  try {
+    const asesoraJid = `${ASESORA_TELEFONO}@s.whatsapp.net`;
+    await sock.sendMessage(asesoraJid, {
+      text: `📢 *Escalación — ${nombre}*\n\n📱 Teléfono: ${telefono}\n📝 Motivo: ${razon}\n\nEl bot se desactivó para este chat. Respóndele directamente al cliente.`,
+    });
+  } catch (err) {
+    console.error('[WhatsApp] Error notificando asesora:', err.message);
+  }
+
+  sesiones.delete(telefono);
+};
 
 // ═══════════════════════════════════════════════════════════════
 // PATRÓN N8N: Timer por teléfono que se reinicia con cada mensaje
@@ -212,11 +232,7 @@ const procesarBuffer = async (telefono, sesiones) => {
     const quiereSalir = /ningun|ningún|no me sirve|no puedo|cancel|no quiero|hablar con|humano|asesor|llamar|llam[ea]/i.test(contenidoLower);
 
     if (quiereSalir) {
-      await enviar(`Entiendo, ningún horario te funciona. Voy a pasar tu caso a un asesor para que te ofrezca más opciones. Te contactará pronto 🙌`);
-      await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: contenidoCompleto });
-      try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: 'Horarios no le sirven' }); } catch (_) {}
-      sesiones.delete(telefono);
-      return;
+      return await escalarAHumano(sock, telefono, sesion, 'Horarios no le sirven', enviar, sesiones);
     }
 
     // Detectar preguntas fuera de contexto (precio, técnico, etc.)
@@ -255,11 +271,7 @@ const procesarBuffer = async (telefono, sesiones) => {
     if (!tecnico) {
       const nuevosSlots = await obtenerDisponibilidad(sesion.datos.tipo_equipo || 'otro', 7, 4);
       if (nuevosSlots.length === 0) {
-        await enviar('Lo siento, ese horario ya fue tomado y no hay más disponibilidad próximamente 😔 Voy a pasar tu caso a un asesor.');
-        await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: 'Slot ya no disponible' });
-        try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: 'Sin disponibilidad' }); } catch (_) {}
-        sesiones.delete(telefono);
-        return;
+        return await escalarAHumano(sock, telefono, sesion, 'Sin disponibilidad — slot ya tomado', enviar, sesiones);
       }
       sesion.datos.slots = nuevosSlots.map(s => ({
         fecha: s.fecha, fechaKey: s.fechaKey, hora_inicio: s.hora_inicio, hora_fin: s.hora_fin,
@@ -379,11 +391,7 @@ const procesarBuffer = async (telefono, sesiones) => {
       // Continuar al paso conversar (no return, caerá al bloque de abajo)
     } else {
       // Cualquier otra cosa (cancelar, cambiar técnico, preguntas) → escalar
-      await enviar(`Voy a pasar tu consulta a un asesor para ayudarte mejor. Te contactará pronto 🙌`);
-      await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: contenidoCompleto });
-      try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: contenidoCompleto }); } catch (_) {}
-      sesiones.delete(telefono);
-      return;
+      return await escalarAHumano(sock, telefono, sesion, contenidoCompleto, enviar, sesiones);
     }
   }
 
@@ -454,13 +462,7 @@ const procesarBuffer = async (telefono, sesiones) => {
     }
 
     if (resp.includes('[ESCALAR]')) {
-      const mensajeLimpio = resp.replace(/\[.*?\]/g, '').trim();
-      if (mensajeLimpio) await enviar(mensajeLimpio);
-      else await enviar(`Voy a pasar tu caso a un asesor para ayudarte mejor. Te contactará pronto 🙌`);
-      await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: contenidoCompleto });
-      try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre }); } catch (_) {}
-      sesiones.delete(telefono);
-      return;
+      return await escalarAHumano(sock, telefono, sesion, contenidoCompleto, enviar, sesiones);
     }
 
     const mensajeLimpio = resp
@@ -489,11 +491,7 @@ async function procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, c
   const slots = await obtenerDisponibilidad(tipo, 7, 4);
 
   if (slots.length === 0) {
-    await enviar('Disculpa, revisé la agenda y no tenemos disponibilidad en los próximos días 😔 Voy a pasar tu caso a un asesor para que te coordine una fecha.');
-    await upsertConversacion(telefono, { estado: 'escalado', ultimo_mensaje: 'Sin disponibilidad técnica' });
-    try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre: sesion.datos.nombre, razon: 'Sin disponibilidad' }); } catch (_) {}
-    sesiones.delete(telefono);
-    return;
+    return await escalarAHumano(sock, telefono, sesion, 'Sin disponibilidad técnica', enviar, sesiones);
   }
 
   sesion.datos.slots = slots.map(s => ({
