@@ -80,7 +80,7 @@ export const ServicioActivo = () => {
   const [activeDiagItem, setActiveDiagItem] = useState<string | null>(null);
   const [diagEstado, setDiagEstado] = useState<'observacion' | 'falla' | null>(null);
   const [diagValue, setDiagValue] = useState('');
-  const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', modelo: '', serial: '', capacidad: '', tecnologia: '' });
+  const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', capacidad: '', tecnologia: '' });
   const [fallaConfirmada, setFallaConfirmada] = useState<boolean | null>(null);
   const [diagnosticoFinal, setDiagnosticoFinal] = useState('');
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
@@ -128,8 +128,6 @@ export const ServicioActivo = () => {
       setCorreccionData({
         marca: esConocida ? marcaEquipo : marcaEquipo ? 'Otra' : '',
         marcaOtra: esConocida ? '' : marcaEquipo,
-        modelo: servicio.equipo.modelo || '',
-        serial: servicio.equipo.serial || '',
         capacidad: servicio.equipo.notas || '',
         tecnologia: '',
       });
@@ -635,20 +633,6 @@ export const ServicioActivo = () => {
                                   className="h-8 text-xs bg-white"
                                 />
                               )}
-                              <label className="text-[11px] font-medium text-slate-500">Modelo</label>
-                              <Input
-                                placeholder="Modelo"
-                                value={correccionData.modelo}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, modelo: e.target.value }))}
-                                className="h-8 text-xs bg-white"
-                              />
-                              <label className="text-[11px] font-medium text-slate-500">Serial</label>
-                              <Input
-                                placeholder="Serial"
-                                value={correccionData.serial}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, serial: e.target.value }))}
-                                className="h-8 text-xs bg-white"
-                              />
                               {servicio.equipo?.tipo === 'aire_acondicionado' && (
                                 <>
                                   <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
@@ -688,8 +672,6 @@ export const ServicioActivo = () => {
                                 try {
                                   await corregirEquipo(id, {
                                     marca: marca || undefined,
-                                    modelo: correccionData.modelo || undefined,
-                                    serial: correccionData.serial || undefined,
                                     capacidad: capacidad || undefined,
                                   });
                                   toast.success('Datos del equipo confirmados');
@@ -705,8 +687,6 @@ export const ServicioActivo = () => {
                         {isEquipoItem && item.completado && servicio.equipo && (
                           <div className="mt-1.5 text-xs rounded-lg p-2 space-y-0.5 bg-green-100 text-green-800">
                             {servicio.equipo.marca && <p><span className="font-semibold">Marca:</span> {servicio.equipo.marca}</p>}
-                            {servicio.equipo.modelo && <p><span className="font-semibold">Modelo:</span> {servicio.equipo.modelo}</p>}
-                            {servicio.equipo.serial && <p><span className="font-semibold">Serial:</span> {servicio.equipo.serial}</p>}
                             {servicio.equipo.notas && <p><span className="font-semibold">Capacidad:</span> {servicio.equipo.notas}</p>}
                           </div>
                         )}
