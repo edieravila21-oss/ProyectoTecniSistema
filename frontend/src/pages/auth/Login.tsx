@@ -64,9 +64,9 @@ export const Login = () => {
   };
 
   return (
-    <div className="min-h-dvh flex items-center justify-center bg-slate-950 p-4 relative overflow-hidden">
-      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
+    <div className="min-h-dvh flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: 'url(/bg-login.png)' }} />
+      <div className="absolute inset-0 backdrop-blur-md bg-slate-950/70" />
 
       <div className="w-full max-w-sm relative z-10">
         <div className="text-center mb-10">
