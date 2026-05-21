@@ -633,35 +633,31 @@ export const ServicioActivo = () => {
                                   className="h-8 text-xs bg-white"
                                 />
                               )}
-                              {servicio.equipo?.tipo === 'aire_acondicionado' && (
-                                <>
-                                  <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
-                                  <select
-                                    value={correccionData.tecnologia}
-                                    onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
-                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  >
-                                    <option value="">Seleccionar</option>
-                                    <option value="Inverter">Inverter</option>
-                                    <option value="Convencional">Convencional</option>
-                                  </select>
-                                  <label className="text-[11px] font-medium text-slate-500">Capacidad</label>
-                                  <select
-                                    value={correccionData.capacidad}
-                                    onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
-                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  >
-                                    <option value="">Capacidad (BTU)</option>
-                                    <option value="9,000 BTU">9,000 BTU</option>
-                                    <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
-                                    <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
-                                    <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
-                                    <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
-                                    <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
-                                    <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
-                                  </select>
-                                </>
-                              )}
+                              <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
+                              <select
+                                value={correccionData.tecnologia}
+                                onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
+                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">Seleccionar</option>
+                                <option value="Inverter">Inverter</option>
+                                <option value="Convencional">Convencional</option>
+                              </select>
+                              <label className="text-[11px] font-medium text-slate-500">Capacidad</label>
+                              <select
+                                value={correccionData.capacidad}
+                                onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
+                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">Capacidad (BTU)</option>
+                                <option value="9,000 BTU">9,000 BTU</option>
+                                <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
+                                <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
+                                <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
+                                <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
+                                <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
+                                <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
+                              </select>
                             </div>
                             <Button
                               className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
