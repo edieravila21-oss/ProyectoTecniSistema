@@ -80,7 +80,6 @@ export const ServicioActivo = () => {
   const [activeDiagItem, setActiveDiagItem] = useState<string | null>(null);
   const [diagEstado, setDiagEstado] = useState<'observacion' | 'falla' | null>(null);
   const [diagValue, setDiagValue] = useState('');
-  const [showCorreccion, setShowCorreccion] = useState(false);
   const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', modelo: '', serial: '', capacidad: '', tecnologia: '' });
   const [fallaConfirmada, setFallaConfirmada] = useState<boolean | null>(null);
   const [diagnosticoFinal, setDiagnosticoFinal] = useState('');
@@ -116,6 +115,26 @@ export const ServicioActivo = () => {
   };
 
   useEffect(() => { fetchServicio(); }, [id]);
+
+  useEffect(() => {
+    if (servicio?.equipo) {
+      const marcasConocidas = [
+        'Samsung','LG','Carrier','Daikin','Midea','York','Trane','Lennox','Panasonic',
+        'Gree','Hisense','TCL','Aux','Whirlpool','Electrolux','Mabe','Haceb',
+        'Challenger','Indurama','Bosch','Frigidaire','Daewoo',
+      ];
+      const marcaEquipo = servicio.equipo.marca || '';
+      const esConocida = marcasConocidas.includes(marcaEquipo);
+      setCorreccionData({
+        marca: esConocida ? marcaEquipo : marcaEquipo ? 'Otra' : '',
+        marcaOtra: esConocida ? '' : marcaEquipo,
+        modelo: servicio.equipo.modelo || '',
+        serial: servicio.equipo.serial || '',
+        capacidad: servicio.equipo.notas || '',
+        tecnologia: '',
+      });
+    }
+  }, [servicio?.equipo?.id]);
 
   useEffect(() => {
     if (servicio?.equipoId) {
@@ -537,16 +556,15 @@ export const ServicioActivo = () => {
 
                   // Items 2 y 3 bloqueados hasta que exista foto 'antes'
                   const bloqueadoSinFoto = !isFotoItem && !tieneFotoAntes && !item.completado;
-                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto;
+                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado);
 
                   return (
-                    <button
+                    <div
                       key={item.id}
                       className={`flex items-start gap-3 w-full p-3 rounded-lg border text-left min-h-[48px] transition-opacity ${
                         (isFotoItem && !item.completado) || bloqueadoSinFoto ? 'opacity-50 cursor-not-allowed' : ''
-                      } ${item.completado ? 'bg-green-50 border-green-200' : ''}`}
+                      } ${item.completado ? 'bg-green-50 border-green-200' : ''} ${!isDisabled ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                       onClick={() => !isDisabled && handleChecklistItem(item.id)}
-                      disabled={isDisabled}
                     >
                       <CheckCircle className={`h-6 w-6 shrink-0 mt-0.5 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
                       <div className="flex-1 min-w-0">
@@ -561,45 +579,12 @@ export const ServicioActivo = () => {
                         {bloqueadoSinFoto && (
                           <p className="text-[11px] text-slate-400 mt-0.5">🔒 Primero toma la foto del equipo</p>
                         )}
-                        {/* Equipo item: mostrar datos del equipo para verificar */}
-                        {isEquipoItem && tieneFotoAntes && servicio.equipo && !showCorreccion && (
-                          <div className={`mt-1.5 text-xs rounded-lg p-2 space-y-0.5 ${
-                            item.completado ? 'bg-green-100 text-green-800' : 'bg-blue-50 text-blue-800'
-                          }`}>
-                            {servicio.equipo.marca && <p><span className="font-semibold">Marca:</span> {servicio.equipo.marca}</p>}
-                            {servicio.equipo.modelo && <p><span className="font-semibold">Modelo:</span> {servicio.equipo.modelo}</p>}
-                            {servicio.equipo.serial && <p><span className="font-semibold">Serial:</span> {servicio.equipo.serial}</p>}
-                            {servicio.equipo.notas && <p><span className="font-semibold">Capacidad:</span> {servicio.equipo.notas}</p>}
-                            {!item.completado && (
-                              <>
-                                <p className="text-blue-600 font-medium mt-1">✓ Confirma que los datos coinciden con el equipo físico</p>
-                                <button
-                                  type="button"
-                                  className="mt-2 flex items-center gap-1 text-red-600 font-semibold hover:text-red-700"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setShowCorreccion(true);
-                                    setCorreccionData({
-                                      marca: servicio.equipo?.marca || '',
-                                      marcaOtra: '',
-                                      modelo: servicio.equipo?.modelo || '',
-                                      serial: servicio.equipo?.serial || '',
-                                      capacidad: servicio.equipo?.notas || '',
-                                      tecnologia: '',
-                                    });
-                                  }}
-                                >
-                                  <AlertTriangle className="h-3 w-3" /> No corresponde
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-                        {/* Formulario de corrección de equipo */}
-                        {isEquipoItem && showCorreccion && !item.completado && (
-                          <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                            <p className="text-xs font-semibold text-red-700">Corregir datos del equipo:</p>
+                        {/* Equipo item: formulario de verificación/complemento */}
+                        {isEquipoItem && tieneFotoAntes && servicio.equipo && !item.completado && (
+                          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <p className="text-xs font-semibold text-blue-700">Verifica y completa los datos del equipo:</p>
                             <div className="space-y-1.5">
+                              <label className="text-[11px] font-medium text-slate-500">Marca</label>
                               <select
                                 value={correccionData.marca}
                                 onChange={(e) => setCorreccionData(d => ({ ...d, marca: e.target.value, marcaOtra: '' }))}
@@ -650,81 +635,83 @@ export const ServicioActivo = () => {
                                   className="h-8 text-xs bg-white"
                                 />
                               )}
-                              {servicio.equipo?.tipo === 'aire_acondicionado' && (
-                                <select
-                                  value={correccionData.tecnologia}
-                                  onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
-                                  className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                  <option value="">Tipo de tecnología</option>
-                                  <option value="Inverter">Inverter</option>
-                                  <option value="Convencional">Convencional</option>
-                                </select>
-                              )}
-                              {servicio.equipo?.tipo === 'aire_acondicionado' && (
-                                <select
-                                  value={correccionData.capacidad}
-                                  onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
-                                  className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                  <option value="">Capacidad (BTU)</option>
-                                  <option value="9,000 BTU">9,000 BTU</option>
-                                  <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
-                                  <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
-                                  <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
-                                  <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
-                                  <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
-                                  <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
-                                </select>
-                              )}
+                              <label className="text-[11px] font-medium text-slate-500">Modelo</label>
                               <Input
                                 placeholder="Modelo"
                                 value={correccionData.modelo}
                                 onChange={(e) => setCorreccionData(d => ({ ...d, modelo: e.target.value }))}
                                 className="h-8 text-xs bg-white"
                               />
+                              <label className="text-[11px] font-medium text-slate-500">Serial</label>
                               <Input
                                 placeholder="Serial"
                                 value={correccionData.serial}
                                 onChange={(e) => setCorreccionData(d => ({ ...d, serial: e.target.value }))}
                                 className="h-8 text-xs bg-white"
                               />
+                              {servicio.equipo?.tipo === 'aire_acondicionado' && (
+                                <>
+                                  <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
+                                  <select
+                                    value={correccionData.tecnologia}
+                                    onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
+                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">Seleccionar</option>
+                                    <option value="Inverter">Inverter</option>
+                                    <option value="Convencional">Convencional</option>
+                                  </select>
+                                  <label className="text-[11px] font-medium text-slate-500">Capacidad</label>
+                                  <select
+                                    value={correccionData.capacidad}
+                                    onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
+                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">Capacidad (BTU)</option>
+                                    <option value="9,000 BTU">9,000 BTU</option>
+                                    <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
+                                    <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
+                                    <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
+                                    <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
+                                    <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
+                                    <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
+                                  </select>
+                                </>
+                              )}
                             </div>
-                            <div className="flex gap-2 pt-1">
-                              <Button
-                                variant="outline"
-                                className="flex-1 h-8 text-xs"
-                                onClick={() => setShowCorreccion(false)}
-                              >
-                                Cancelar
-                              </Button>
-                              <Button
-                                className="flex-1 h-8 text-xs bg-red-600 hover:bg-red-700"
-                                onClick={async () => {
-                                  if (!id) return;
-                                  const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra : correccionData.marca;
-                                  const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
-                                  try {
-                                    await corregirEquipo(id, {
-                                      marca,
-                                      modelo: correccionData.modelo,
-                                      serial: correccionData.serial,
-                                      capacidad: capacidad || undefined,
-                                    });
-                                    toast.success('Datos del equipo corregidos');
-                                    setShowCorreccion(false);
-                                    await handleChecklistItem(item.id);
-                                    fetchServicio();
-                                  } catch { toast.error('Error corrigiendo datos'); }
-                                }}
-                              >
-                                Guardar corrección
-                              </Button>
-                            </div>
+                            <Button
+                              className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
+                              onClick={async () => {
+                                if (!id) return;
+                                const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra : correccionData.marca;
+                                const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
+                                try {
+                                  await corregirEquipo(id, {
+                                    marca: marca || undefined,
+                                    modelo: correccionData.modelo || undefined,
+                                    serial: correccionData.serial || undefined,
+                                    capacidad: capacidad || undefined,
+                                  });
+                                  toast.success('Datos del equipo confirmados');
+                                  await handleChecklistItem(item.id);
+                                  fetchServicio();
+                                } catch { toast.error('Error guardando datos'); }
+                              }}
+                            >
+                              <Check className="h-3.5 w-3.5 mr-1" /> Confirmar datos del equipo
+                            </Button>
+                          </div>
+                        )}
+                        {isEquipoItem && item.completado && servicio.equipo && (
+                          <div className="mt-1.5 text-xs rounded-lg p-2 space-y-0.5 bg-green-100 text-green-800">
+                            {servicio.equipo.marca && <p><span className="font-semibold">Marca:</span> {servicio.equipo.marca}</p>}
+                            {servicio.equipo.modelo && <p><span className="font-semibold">Modelo:</span> {servicio.equipo.modelo}</p>}
+                            {servicio.equipo.serial && <p><span className="font-semibold">Serial:</span> {servicio.equipo.serial}</p>}
+                            {servicio.equipo.notas && <p><span className="font-semibold">Capacidad:</span> {servicio.equipo.notas}</p>}
                           </div>
                         )}
                       </div>
-                    </button>
+                    </div>
                   );
                 });
               })()}
