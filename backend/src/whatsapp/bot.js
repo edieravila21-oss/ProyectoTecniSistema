@@ -229,15 +229,25 @@ const iniciar = async () => {
             const pollCreatorJid = msg.message.pollUpdateMessage.pollCreationMessageKey?.remoteJid || meJid;
 
             console.log(`[POLL] pollEncKey length: ${pollEncKey?.length || 'null'}`);
-            console.log(`[POLL] voterJid: ${voterJid}, pollCreatorJid: ${pollCreatorJid}`);
+            console.log(`[POLL] voterJid: ${voterJid}, pollCreatorJid: ${pollCreatorJid}, meJid: ${meJid}`);
+            console.log(`[POLL] vote keys:`, JSON.stringify(Object.keys(vote || {})));
+            console.log(`[POLL] vote.encPayload type:`, typeof vote?.encPayload, `length:`, vote?.encPayload?.length);
+            console.log(`[POLL] vote.encIv type:`, typeof vote?.encIv, `length:`, vote?.encIv?.length);
 
             if (!pollEncKey) {
-              console.log(`[POLL] ⚠️ No messageSecret en cache — no se puede descifrar`);
+              console.log(`[POLL] ⚠️ No messageSecret en cache`);
               continue;
             }
 
-            const selectedHashes = decryptPollVote(vote, {
-              encKey: pollEncKey,
+            // Asegurar que encPayload y encIv sean Buffers
+            const voteFixed = {
+              ...vote,
+              encPayload: vote.encPayload ? Buffer.from(vote.encPayload) : undefined,
+              encIv: vote.encIv ? Buffer.from(vote.encIv) : undefined,
+            };
+
+            const selectedHashes = decryptPollVote(voteFixed, {
+              encKey: Buffer.from(pollEncKey),
               pollCreatorJid,
               voterJid,
             });
