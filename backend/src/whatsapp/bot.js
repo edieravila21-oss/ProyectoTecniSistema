@@ -9,6 +9,15 @@ const { manejarMensaje } = require('./flujo');
 const { escribiendoTimestamps } = require('./estado');
 
 const SESSION_DIR = path.join(__dirname, '../../whatsapp_session');
+
+const limpiarSesion = () => {
+  if (!fs.existsSync(SESSION_DIR)) return;
+  for (const file of fs.readdirSync(SESSION_DIR)) {
+    const filePath = path.join(SESSION_DIR, file);
+    fs.rmSync(filePath, { recursive: true, force: true });
+  }
+};
+
 let sock = null;
 let estado = { conectado: false, numero_conectado: null };
 let reconnectAttempts = 0;
@@ -128,10 +137,10 @@ const iniciar = async () => {
         reconnectTimer = setTimeout(iniciar, delay);
       } else if (!shouldReconnect) {
         console.log('[WhatsApp] Sesión cerrada. Escanea un nuevo QR.');
-        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        limpiarSesion();
       } else {
         console.log('[WhatsApp] Límite de reconexiones alcanzado. Borrando sesión para forzar nuevo QR.');
-        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+        limpiarSesion();
         estado = { conectado: false, numero_conectado: null };
         try { getIO().to('admin').emit('whatsapp_estado', { conectado: false, requiere_qr: true }); } catch (_) {}
       }
@@ -345,9 +354,7 @@ const desconectar = async () => {
     try { sock.end(undefined); } catch (_) {}
     sock = null;
   }
-  if (fs.existsSync(SESSION_DIR)) {
-    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-  }
+  limpiarSesion();
   estado = { conectado: false, numero_conectado: null };
   try { getIO().to('admin').emit('whatsapp_estado', estado); } catch (_) {}
 };
