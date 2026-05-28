@@ -248,21 +248,23 @@ const iniciar = async () => {
               return Buffer.from(val);
             };
 
-            const voteFixed = {
-              encPayload: toBuffer(vote.encPayload),
-              encIv: toBuffer(vote.encIv),
-            };
+            // Preservar todos los campos del vote, solo convertir los binarios
+            const voteFixed = { ...vote };
+            if (vote.encPayload) voteFixed.encPayload = toBuffer(vote.encPayload);
+            if (vote.encIv) voteFixed.encIv = toBuffer(vote.encIv);
 
-            // Usar el JID real del bot, no el LID
-            const realCreatorJid = meJid || pollCreatorJid;
+            // Normalizar JIDs: quitar sufijo de device (:71)
+            const normalizeJid = (jid) => jid ? jid.replace(/:\d+@/, '@') : jid;
+            const realCreatorJid = normalizeJid(meJid) || normalizeJid(pollCreatorJid);
+            const realVoterJid = normalizeJid(voterJid);
 
             console.log(`[POLL] voteFixed.encPayload: ${voteFixed.encPayload?.length}b, encIv: ${voteFixed.encIv?.length}b`);
-            console.log(`[POLL] Usando creatorJid: ${realCreatorJid}`);
+            console.log(`[POLL] creatorJid: ${realCreatorJid}, voterJid: ${realVoterJid}`);
 
             const selectedHashes = decryptPollVote(voteFixed, {
               encKey: toBuffer(pollEncKey),
               pollCreatorJid: realCreatorJid,
-              voterJid,
+              voterJid: realVoterJid,
             });
 
             console.log(`[POLL] Hashes descifrados: ${selectedHashes?.length || 0}`);
