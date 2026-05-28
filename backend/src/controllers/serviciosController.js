@@ -294,7 +294,7 @@ const cambiarEstado = async (req, res, next) => {
 
     // WhatsApp notifications to client on key state changes
     if (['en_camino', 'en_servicio', 'completado'].includes(estado) && actualizado.cliente?.telefono) {
-      const { enviarMensaje } = require('../whatsapp/bot');
+      const { enviarMensaje, enviarEncuestaCalificacion } = require('../whatsapp/bot');
       const tecnico = actualizado.tecnico?.nombre || 'Tu técnico';
       const cliente = actualizado.cliente?.nombre?.split(' ')[0] || '';
       const equipo = actualizado.equipo
@@ -307,6 +307,16 @@ const cambiarEstado = async (req, res, next) => {
       };
       try {
         await enviarMensaje(actualizado.cliente.telefono, mensajes[estado]);
+        if (estado === 'completado') {
+          setTimeout(async () => {
+            try {
+              await enviarEncuestaCalificacion(actualizado.cliente.telefono, actualizado.id);
+              console.log(`[WhatsApp] Encuesta de calificación enviada a ${actualizado.cliente.telefono}`);
+            } catch (err) {
+              console.error('[WhatsApp] Error enviando encuesta:', err.message);
+            }
+          }, 5000);
+        }
       } catch (err) {
         console.error('[WhatsApp] Error enviando notificación:', err.message);
       }

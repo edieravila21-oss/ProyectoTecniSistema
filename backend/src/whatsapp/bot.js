@@ -19,6 +19,8 @@ const MAX_RECONNECT = 20;
 const sesiones = new Map();
 // Mapa LID → teléfono real (se llena al sincronizar contactos)
 const lidToPhone = new Map();
+// Mapa pollMessageId → { servicioId, telefono } para calificaciones
+const encuestasPendientes = new Map();
 
 const resolverTelefono = (remoteJid) => {
   if (remoteJid.endsWith('@s.whatsapp.net')) {
@@ -184,10 +186,47 @@ const iniciar = async () => {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
-      if (msg.key.fromMe || !msg.message) continue;
+      if (!msg.message) continue;
 
       const remoteJid = msg.key.remoteJid;
       if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@broadcast')) continue;
+
+      // Detectar voto de encuesta (puede venir de nosotros o del cliente)
+      if (msg.message.pollUpdateMessage) {
+        const pollUpdate = msg.message.pollUpdateMessage;
+        const pollMsgKey = pollUpdate.pollCreationMessageKey?.id;
+        if (pollMsgKey && encuestasPendientes.has(pollMsgKey)) {
+          const { servicioId } = encuestasPendientes.get(pollMsgKey);
+          try {
+            const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
+            const votes = getAggregateVotesInPollMessage({
+              message: msg.message,
+              pollUpdates: [pollUpdate],
+            });
+            if (votes && votes.length > 0) {
+              const votedOption = votes.find(v => v.voters && v.voters.length > 0);
+              if (votedOption) {
+                const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
+                const calificacion = opciones.indexOf(votedOption.name) + 1;
+                if (calificacion >= 1 && calificacion <= 5) {
+                  await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } });
+                  const jidResp = remoteJid.endsWith('@lid') ? (msg.key.remoteJidAlt || remoteJid) : remoteJid;
+                  const tel = jidResp.replace('@s.whatsapp.net', '').replace('@lid', '');
+                  await sock.sendMessage(jidResp, { text: calificacion >= 4 ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊' : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪' });
+                  encuestasPendientes.delete(pollMsgKey);
+                  console.log(`[WhatsApp] Calificación ${calificacion}⭐ guardada para servicio ${servicioId}`);
+                  try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[WhatsApp] Error procesando voto de encuesta:', err.message);
+          }
+        }
+        continue;
+      }
+
+      if (msg.key.fromMe) continue;
 
       // Resolver teléfono real: preferir remoteJidAlt (tiene el número), fallback a remoteJid
       const jidReal = msg.key.remoteJidAlt || remoteJid;
@@ -255,6 +294,26 @@ const enviarMensaje = async (telefono, mensaje) => {
   return true;
 };
 
+const enviarEncuestaCalificacion = async (telefono, servicioId) => {
+  if (!sock || !estado.conectado) return false;
+
+  const jid = telefono.includes('@') ? telefono : `${telefono}@s.whatsapp.net`;
+  const pollMsg = await sock.sendMessage(jid, {
+    poll: {
+      name: '⭐ ¿Cómo calificas nuestro servicio?',
+      values: ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'],
+      selectableCount: 1,
+    },
+  });
+
+  // Guardar referencia poll → servicio para cuando llegue el voto
+  if (pollMsg?.key?.id) {
+    encuestasPendientes.set(pollMsg.key.id, { servicioId, telefono });
+  }
+
+  return true;
+};
+
 const getEstado = () => estado;
 
 const conectar = async () => {
@@ -293,4 +352,4 @@ const desconectar = async () => {
   try { getIO().to('admin').emit('whatsapp_estado', estado); } catch (_) {}
 };
 
-module.exports = { iniciar, enviarMensaje, getEstado, conectar, desconectar };
+module.exports = { iniciar, enviarMensaje, enviarEncuestaCalificacion, getEstado, conectar, desconectar };
