@@ -438,6 +438,9 @@ const procesarBuffer = async (telefono, sesiones) => {
     const equipoMatch = resp.match(/\[EQUIPO:([^\]]+)\]/);
     if (equipoMatch) sesion.datos.tipo_equipo = equipoMatch[1].trim();
 
+    const tipoServMatch = resp.match(/\[TIPO_SERVICIO:([^\]]+)\]/);
+    if (tipoServMatch) sesion.datos.tipo_servicio = tipoServMatch[1].trim();
+
     const fallaMatch = resp.match(/\[FALLA:([^\]]+)\]/);
     if (fallaMatch) sesion.datos.falla = fallaMatch[1].trim();
 
@@ -468,11 +471,7 @@ const procesarBuffer = async (telefono, sesiones) => {
     }
 
     const mensajeLimpio = resp
-      .replace(/\[NOMBRE:[^\]]+\]/g, '')
-      .replace(/\[EQUIPO:[^\]]+\]/g, '')
-      .replace(/\[FALLA:[^\]]+\]/g, '')
-      .replace(/\[DIRECCION:[^\]]+\]/g, '')
-      .replace(/\[REFERENCIA:[^\]]+\]/g, '')
+      .replace(/\[[A-Z_]+:[^\]]*\]/g, '')
       .replace(/\[AGENDAR\]/g, '')
       .replace(/\[ESCALAR\]/g, '')
       .trim();
