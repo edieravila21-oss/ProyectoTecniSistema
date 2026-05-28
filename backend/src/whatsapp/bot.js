@@ -222,24 +222,12 @@ const iniciar = async () => {
             const { decryptPollVote } = require('@whiskeysockets/baileys');
             const crypto = require('crypto');
 
-            const pollEncKey = cachedMsg?.messageContextInfo?.messageSecret;
+            const pollCreationMsg = cachedMsg?.pollCreationMessage || cachedMsg?.pollCreationMessageV3;
+            const pollEncKey = pollCreationMsg?.encKey || cachedMsg?.messageContextInfo?.messageSecret;
             const vote = msg.message.pollUpdateMessage.vote;
-            const voterJid = msg.key.participant || msg.key.remoteJid;
-            const meJid = sock.user?.id;
-            const pollCreatorJid = msg.message.pollUpdateMessage.pollCreationMessageKey?.remoteJid || meJid;
 
-            console.log(`[POLL] pollEncKey length: ${pollEncKey?.length || 'null'}`);
-            console.log(`[POLL] voterJid: ${voterJid}, pollCreatorJid: ${pollCreatorJid}, meJid: ${meJid}`);
-            console.log(`[POLL] vote keys:`, JSON.stringify(Object.keys(vote || {})));
-            console.log(`[POLL] vote.encPayload type:`, typeof vote?.encPayload, `length:`, vote?.encPayload?.length);
-            console.log(`[POLL] vote.encIv type:`, typeof vote?.encIv, `length:`, vote?.encIv?.length);
+            if (!pollEncKey) continue;
 
-            if (!pollEncKey) {
-              console.log(`[POLL] ⚠️ No messageSecret en cache`);
-              continue;
-            }
-
-            // Convertir protobuf Uint8Array → Buffer
             const toBuffer = (val) => {
               if (!val) return undefined;
               if (Buffer.isBuffer(val)) return val;
@@ -248,40 +236,46 @@ const iniciar = async () => {
               return Buffer.from(val);
             };
 
-            // Preservar todos los campos del vote, solo convertir los binarios
             const voteFixed = { ...vote };
             if (vote.encPayload) voteFixed.encPayload = toBuffer(vote.encPayload);
             if (vote.encIv) voteFixed.encIv = toBuffer(vote.encIv);
 
-            // Normalizar JIDs: quitar sufijo de device (:71)
             const normalizeJid = (jid) => jid ? jid.replace(/:\d+@/, '@') : jid;
-            const realCreatorJid = normalizeJid(meJid) || normalizeJid(pollCreatorJid);
-            const realVoterJid = normalizeJid(voterJid);
+            const meJid = sock.user?.id;
+            const meLid = sock.user?.lid || null;
+            const rawVoterJid = msg.key.remoteJid;
 
-            console.log(`[POLL] voteFixed.encPayload: ${voteFixed.encPayload?.length}b, encIv: ${voteFixed.encIv?.length}b`);
-            console.log(`[POLL] creatorJid: ${realCreatorJid}, voterJid: ${realVoterJid}`);
+            const creatorOptions = [meLid ? normalizeJid(meLid) : null, normalizeJid(meJid)].filter(Boolean);
+            const voterOptions = [normalizeJid(rawVoterJid), `${telCliente}@s.whatsapp.net`].filter(Boolean);
 
-            const selectedHashes = decryptPollVote(voteFixed, {
-              encKey: toBuffer(pollEncKey),
-              pollCreatorJid: realCreatorJid,
-              voterJid: realVoterJid,
-            });
+            let pollVoteMsg = null;
+            for (const creator of [...new Set(creatorOptions)]) {
+              for (const voter of [...new Set(voterOptions)]) {
+                try {
+                  pollVoteMsg = decryptPollVote(voteFixed, {
+                    pollEncKey: toBuffer(pollEncKey),
+                    pollMsgId: pollCreationKey,
+                    pollCreatorJid: creator,
+                    voterJid: voter,
+                  });
+                  break;
+                } catch (_) {}
+              }
+              if (pollVoteMsg) break;
+            }
 
-            console.log(`[POLL] Hashes descifrados: ${selectedHashes?.length || 0}`);
+            if (!pollVoteMsg) continue;
 
             const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
             const opcionHashes = opciones.map(op => crypto.createHash('sha256').update(Buffer.from(op)).digest());
+            const hashArray = Array.isArray(pollVoteMsg.selectedOptions) ? pollVoteMsg.selectedOptions : [];
 
             let calificacion = 0;
-            if (selectedHashes && selectedHashes.length > 0) {
-              for (const selHash of selectedHashes) {
-                const hashBuf = Buffer.isBuffer(selHash) ? selHash : Buffer.from(selHash);
-                const idx = opcionHashes.findIndex(h => h.equals(hashBuf));
-                if (idx !== -1) { calificacion = idx + 1; break; }
-              }
+            for (const selHash of hashArray) {
+              const hashBuf = Buffer.isBuffer(selHash) ? selHash : Buffer.from(selHash);
+              const idx = opcionHashes.findIndex(h => h.equals(hashBuf));
+              if (idx !== -1) { calificacion = idx + 1; break; }
             }
-
-            console.log(`[POLL] Calificación mapeada: ${calificacion}`);
 
             if (calificacion >= 1 && calificacion <= 5) {
               await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } }).catch(() => {});
@@ -293,12 +287,8 @@ const iniciar = async () => {
               });
               encuestasPendientes.delete(pollCreationKey);
               pollMsgCache.delete(pollCreationKey);
-              console.log(`[POLL] ✅ Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) guardada`);
+              console.log(`[POLL] ✅ Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) — servicio ${servicioId}`);
               try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
-            } else {
-              console.log(`[POLL] ⚠️ No se pudo mapear`);
-              selectedHashes?.forEach((h, i) => console.log(`  Voto ${i}: ${Buffer.from(h).toString('hex').substring(0, 20)}`));
-              opcionHashes.forEach((h, i) => console.log(`  Opción ${i}: ${h.toString('hex').substring(0, 20)}`));
             }
           } catch (err) {
             console.error('[POLL] Error procesando voto:', err.message);
@@ -307,14 +297,7 @@ const iniciar = async () => {
         continue;
       }
 
-      if (msg.key.fromMe) {
-        // Si es echo de un poll que ya tenemos en cache, no sobreescribir (proteger messageSecret)
-        if (msg.key.id && pollMsgCache.has(msg.key.id) && (msg.message.pollCreationMessage || msg.message.pollCreationMessageV3)) {
-          const echoHasSecret = !!msg.message?.messageContextInfo?.messageSecret;
-          console.log(`[POLL] Echo de poll ${msg.key.id} (echoHasSecret: ${echoHasSecret}) — no sobreescribir cache`);
-        }
-        continue;
-      }
+      if (msg.key.fromMe) continue;
 
       // Resolver teléfono real: preferir remoteJidAlt (tiene el número), fallback a remoteJid
       const jidReal = msg.key.remoteJidAlt || remoteJid;
@@ -354,71 +337,6 @@ const iniciar = async () => {
       manejarMensaje(sock, telefono, jidReal, contenido, sesiones).catch(err => {
         console.error('[WhatsApp] Error manejando mensaje:', err.message);
       });
-    }
-  });
-
-  // Procesar votos de encuestas de calificación
-  sock.ev.on('messages.update', async (updates) => {
-    for (const update of updates) {
-      console.log(`[POLL-UPDATE] messages.update recibido — keys:`, JSON.stringify(Object.keys(update)));
-      console.log(`[POLL-UPDATE] update.key:`, JSON.stringify(update.key));
-      console.log(`[POLL-UPDATE] update.update keys:`, JSON.stringify(Object.keys(update.update || {})));
-
-      const pollUpdate = update.update?.pollUpdates;
-      if (!pollUpdate || pollUpdate.length === 0) {
-        console.log(`[POLL-UPDATE] No tiene pollUpdates, saltando`);
-        continue;
-      }
-
-      const pollMsgKey = update.key?.id;
-      console.log(`[POLL-UPDATE] pollMsgKey: ${pollMsgKey}`);
-      console.log(`[POLL-UPDATE] Encuestas pendientes:`, [...encuestasPendientes.keys()]);
-
-      if (!pollMsgKey || !encuestasPendientes.has(pollMsgKey)) {
-        console.log(`[POLL-UPDATE] Key no encontrada en pendientes, saltando`);
-        continue;
-      }
-
-      const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollMsgKey);
-      const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
-
-      try {
-        const { decryptPollVote } = require('@whiskeysockets/baileys');
-        for (const pUpdate of pollUpdate) {
-          const votes = pUpdate.vote?.selectedOptions || [];
-          if (votes.length === 0) continue;
-
-          // Descifrar SHA256 de las opciones para mapear el voto
-          const crypto = require('crypto');
-          const opcionHashes = opciones.map(op => crypto.createHash('sha256').update(op).digest());
-
-          let calificacion = 0;
-          for (const voteHash of votes) {
-            const idx = opcionHashes.findIndex(h => h.equals(voteHash));
-            if (idx !== -1) {
-              calificacion = idx + 1;
-              break;
-            }
-          }
-
-          if (calificacion >= 1 && calificacion <= 5) {
-            await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } });
-            const jid = telCliente.includes('@') ? telCliente : `${telCliente}@s.whatsapp.net`;
-            await sock.sendMessage(jid, {
-              text: calificacion >= 4
-                ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊'
-                : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪',
-            });
-            encuestasPendientes.delete(pollMsgKey);
-            console.log(`[WhatsApp] Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) guardada para servicio ${servicioId}`);
-            try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
-          } else {
-            console.log(`[WhatsApp] Voto no mapeado. Hashes recibidos: ${votes.length}, opciones: ${opciones.length}`);
-          }
-        }
-      } catch (err) {
-        console.error('[WhatsApp] Error procesando voto de encuesta:', err.message);
-      }
     }
   });
 
