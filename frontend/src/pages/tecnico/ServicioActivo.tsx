@@ -410,7 +410,12 @@ export const ServicioActivo = () => {
               )}
               {servicio.estado === 'en_camino' && (
                 <Button className="w-full min-h-[48px] text-base bg-green-600 hover:bg-green-700" onClick={() => { handleCambiarEstado('en_servicio'); setPasoActual(1); }} disabled={saving}>
-                  Confirmar llegada <Check className="h-5 w-5 ml-1" />
+                  Iniciar servicio <Check className="h-5 w-5 ml-1" />
+                </Button>
+              )}
+              {servicio.estado === 'en_servicio' && (
+                <Button className="w-full min-h-[48px] text-base" onClick={() => setPasoActual(1)}>
+                  Continuar servicio <ArrowRight className="h-5 w-5 ml-1" />
                 </Button>
               )}
               {/* Botón eliminar — solo si el servicio no ha iniciado */}
