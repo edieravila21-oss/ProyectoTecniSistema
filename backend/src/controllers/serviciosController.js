@@ -301,9 +301,9 @@ const cambiarEstado = async (req, res, next) => {
         ? `${actualizado.equipo.tipo === 'aire_acondicionado' ? 'aire acondicionado' : actualizado.equipo.tipo === 'nevera' ? 'nevera' : 'equipo'} ${actualizado.equipo.marca || ''}`.trim()
         : 'equipo';
       const mensajes = {
-        en_camino: `🚗 *RefriElectri Pro*\n\nHola ${cliente}, soy *${tecnico}* tu técnico asignado. Voy en camino a atender tu ${equipo}.\n\n📍 Estaré llegando en máximo 15 minutos. Si necesitas indicarme algo sobre la ubicación, responde este mensaje.\n\n¡Nos vemos pronto!`,
-        en_servicio: `✅ *RefriElectri Pro*\n\nHola ${cliente}, *${tecnico}* ya llegó y va a comenzar el servicio de tu ${equipo}.\n\nTe notificaremos cuando finalice.`,
-        completado: `🎉 *RefriElectri Pro*\n\nHola ${cliente}, el servicio de tu ${equipo} ha sido completado por *${tecnico}*.\n\n${actualizado.valor_final ? `💰 Valor: $${actualizado.valor_final.toLocaleString('es-CO')}\n` : ''}¡Gracias por confiar en nosotros! Si tienes alguna duda, escríbenos.`,
+        en_camino: `🚗 Hola ${cliente}, *${tecnico}* va en camino a atender tu ${equipo}.`,
+        en_servicio: `✅ ${cliente}, *${tecnico}* ya llegó y comenzará el servicio.`,
+        completado: `🎉 ${cliente}, tu servicio fue completado por *${tecnico}*.${actualizado.valor_final ? ` Valor: $${actualizado.valor_final.toLocaleString('es-CO')}` : ''} ¡Gracias!`,
       };
       try {
         await enviarMensaje(actualizado.cliente.telefono, mensajes[estado]);
