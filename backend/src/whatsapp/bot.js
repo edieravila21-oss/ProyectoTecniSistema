@@ -204,32 +204,21 @@ const iniciar = async () => {
       if (msg.message.pollUpdateMessage) {
         const pollCreationKey = msg.message.pollUpdateMessage.pollCreationMessageKey?.id;
         if (pollCreationKey && encuestasPendientes.has(pollCreationKey)) {
-          const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollCreationKey);
+          const { servicioId, telefono: telCliente, pollMessage } = encuestasPendientes.get(pollCreationKey);
           try {
-            const pollMsg = msg.message.pollUpdateMessage;
-            console.log(`[POLL] Estructura completa:`, JSON.stringify(pollMsg, (key, value) => {
-              if (value?.type === 'Buffer') return `<Buffer ${value.data?.length} bytes>`;
-              if (Buffer.isBuffer(value)) return `<Buffer ${value.length} bytes>`;
-              return value;
-            }, 2));
-            const vote = pollMsg.vote;
-            const selectedHashes = vote?.selectedOptions || vote?.selectedSha256 || [];
-            console.log(`[POLL] Voto recibido — servicio: ${servicioId}, hashes: ${selectedHashes.length}`);
+            const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
+            const votes = getAggregateVotesInPollMessage({
+              message: pollMessage.message,
+              pollUpdates: [msg.message.pollUpdateMessage],
+            });
+            console.log(`[POLL] Votos descifrados:`, JSON.stringify(votes));
 
-            if (selectedHashes.length > 0) {
-              const crypto = require('crypto');
-              const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
-              const opcionHashes = opciones.map(op => crypto.createHash('sha256').update(Buffer.from(op)).digest());
+            const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
+            const votedOption = votes?.find(v => v.voters && v.voters.length > 0);
 
-              let calificacion = 0;
-              for (const voteHash of selectedHashes) {
-                const hashBuf = Buffer.isBuffer(voteHash) ? voteHash : Buffer.from(voteHash);
-                const idx = opcionHashes.findIndex(h => h.equals(hashBuf));
-                console.log(`[POLL] Comparando hash, match idx: ${idx}`);
-                if (idx !== -1) { calificacion = idx + 1; break; }
-              }
-
-              console.log(`[POLL] Calificación mapeada: ${calificacion}`);
+            if (votedOption) {
+              const calificacion = opciones.indexOf(votedOption.name) + 1;
+              console.log(`[POLL] Opción votada: "${votedOption.name}" → calificación: ${calificacion}`);
 
               if (calificacion >= 1 && calificacion <= 5) {
                 await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } }).catch(() => {});
@@ -240,19 +229,14 @@ const iniciar = async () => {
                     : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪',
                 });
                 encuestasPendientes.delete(pollCreationKey);
-                console.log(`[POLL] ✅ Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) guardada`);
+                console.log(`[POLL] ✅ Calificación ${calificacion}⭐ guardada para servicio ${servicioId}`);
                 try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
-              } else {
-                console.log(`[POLL] ⚠️ No se pudo mapear. Hashes de opciones:`);
-                opcionHashes.forEach((h, i) => console.log(`  ${i}: ${h.toString('hex').substring(0, 16)}...`));
-                selectedHashes.forEach((h, i) => {
-                  const buf = Buffer.isBuffer(h) ? h : Buffer.from(h);
-                  console.log(`  Voto ${i}: ${buf.toString('hex').substring(0, 16)}...`);
-                });
               }
+            } else {
+              console.log(`[POLL] ⚠️ No se encontró opción votada en:`, JSON.stringify(votes));
             }
           } catch (err) {
-            console.error('[POLL] Error procesando voto:', err.message);
+            console.error('[POLL] Error procesando voto:', err.message, err.stack);
           }
         }
         continue;
@@ -403,9 +387,8 @@ const enviarEncuestaCalificacion = async (telefono, servicioId) => {
     },
   });
 
-  // Guardar referencia poll → servicio para cuando llegue el voto
   if (pollMsg?.key?.id) {
-    encuestasPendientes.set(pollMsg.key.id, { servicioId, telefono });
+    encuestasPendientes.set(pollMsg.key.id, { servicioId, telefono, pollMessage: pollMsg });
   }
 
   return true;
