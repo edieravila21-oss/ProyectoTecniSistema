@@ -200,40 +200,8 @@ const iniciar = async () => {
       const remoteJid = msg.key.remoteJid;
       if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@broadcast')) continue;
 
-      // Detectar voto de encuesta (puede venir de nosotros o del cliente)
-      if (msg.message.pollUpdateMessage) {
-        const pollUpdate = msg.message.pollUpdateMessage;
-        const pollMsgKey = pollUpdate.pollCreationMessageKey?.id;
-        if (pollMsgKey && encuestasPendientes.has(pollMsgKey)) {
-          const { servicioId } = encuestasPendientes.get(pollMsgKey);
-          try {
-            const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
-            const votes = getAggregateVotesInPollMessage({
-              message: msg.message,
-              pollUpdates: [pollUpdate],
-            });
-            if (votes && votes.length > 0) {
-              const votedOption = votes.find(v => v.voters && v.voters.length > 0);
-              if (votedOption) {
-                const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
-                const calificacion = opciones.indexOf(votedOption.name) + 1;
-                if (calificacion >= 1 && calificacion <= 5) {
-                  await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } });
-                  const jidResp = remoteJid.endsWith('@lid') ? (msg.key.remoteJidAlt || remoteJid) : remoteJid;
-                  const tel = jidResp.replace('@s.whatsapp.net', '').replace('@lid', '');
-                  await sock.sendMessage(jidResp, { text: calificacion >= 4 ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊' : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪' });
-                  encuestasPendientes.delete(pollMsgKey);
-                  console.log(`[WhatsApp] Calificación ${calificacion}⭐ guardada para servicio ${servicioId}`);
-                  try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
-                }
-              }
-            }
-          } catch (err) {
-            console.error('[WhatsApp] Error procesando voto de encuesta:', err.message);
-          }
-        }
-        continue;
-      }
+      // Los votos de encuesta se procesan en messages.update, no aquí
+      if (msg.message.pollUpdateMessage) continue;
 
       if (msg.key.fromMe) continue;
 
@@ -275,6 +243,58 @@ const iniciar = async () => {
       manejarMensaje(sock, telefono, jidReal, contenido, sesiones).catch(err => {
         console.error('[WhatsApp] Error manejando mensaje:', err.message);
       });
+    }
+  });
+
+  // Procesar votos de encuestas de calificación
+  sock.ev.on('messages.update', async (updates) => {
+    for (const update of updates) {
+      const pollUpdate = update.update?.pollUpdates;
+      if (!pollUpdate || pollUpdate.length === 0) continue;
+
+      const pollMsgKey = update.key?.id;
+      if (!pollMsgKey || !encuestasPendientes.has(pollMsgKey)) continue;
+
+      const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollMsgKey);
+      const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
+
+      try {
+        const { decryptPollVote } = require('@whiskeysockets/baileys');
+        for (const pUpdate of pollUpdate) {
+          const votes = pUpdate.vote?.selectedOptions || [];
+          if (votes.length === 0) continue;
+
+          // Descifrar SHA256 de las opciones para mapear el voto
+          const crypto = require('crypto');
+          const opcionHashes = opciones.map(op => crypto.createHash('sha256').update(op).digest());
+
+          let calificacion = 0;
+          for (const voteHash of votes) {
+            const idx = opcionHashes.findIndex(h => h.equals(voteHash));
+            if (idx !== -1) {
+              calificacion = idx + 1;
+              break;
+            }
+          }
+
+          if (calificacion >= 1 && calificacion <= 5) {
+            await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } });
+            const jid = telCliente.includes('@') ? telCliente : `${telCliente}@s.whatsapp.net`;
+            await sock.sendMessage(jid, {
+              text: calificacion >= 4
+                ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊'
+                : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪',
+            });
+            encuestasPendientes.delete(pollMsgKey);
+            console.log(`[WhatsApp] Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) guardada para servicio ${servicioId}`);
+            try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
+          } else {
+            console.log(`[WhatsApp] Voto no mapeado. Hashes recibidos: ${votes.length}, opciones: ${opciones.length}`);
+          }
+        }
+      } catch (err) {
+        console.error('[WhatsApp] Error procesando voto de encuesta:', err.message);
+      }
     }
   });
 
