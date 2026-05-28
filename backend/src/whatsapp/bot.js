@@ -200,8 +200,13 @@ const iniciar = async () => {
       const remoteJid = msg.key.remoteJid;
       if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@broadcast')) continue;
 
-      // Los votos de encuesta se procesan en messages.update, no aquí
-      if (msg.message.pollUpdateMessage) continue;
+      // Log poll votes para debug
+      if (msg.message.pollUpdateMessage) {
+        console.log(`[POLL-UPSERT] Voto recibido vía messages.upsert`);
+        console.log(`[POLL-UPSERT] pollCreationMessageKey:`, JSON.stringify(msg.message.pollUpdateMessage.pollCreationMessageKey));
+        console.log(`[POLL-UPSERT] Encuestas pendientes:`, [...encuestasPendientes.keys()]);
+        continue;
+      }
 
       if (msg.key.fromMe) continue;
 
@@ -249,11 +254,24 @@ const iniciar = async () => {
   // Procesar votos de encuestas de calificación
   sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
+      console.log(`[POLL-UPDATE] messages.update recibido — keys:`, JSON.stringify(Object.keys(update)));
+      console.log(`[POLL-UPDATE] update.key:`, JSON.stringify(update.key));
+      console.log(`[POLL-UPDATE] update.update keys:`, JSON.stringify(Object.keys(update.update || {})));
+
       const pollUpdate = update.update?.pollUpdates;
-      if (!pollUpdate || pollUpdate.length === 0) continue;
+      if (!pollUpdate || pollUpdate.length === 0) {
+        console.log(`[POLL-UPDATE] No tiene pollUpdates, saltando`);
+        continue;
+      }
 
       const pollMsgKey = update.key?.id;
-      if (!pollMsgKey || !encuestasPendientes.has(pollMsgKey)) continue;
+      console.log(`[POLL-UPDATE] pollMsgKey: ${pollMsgKey}`);
+      console.log(`[POLL-UPDATE] Encuestas pendientes:`, [...encuestasPendientes.keys()]);
+
+      if (!pollMsgKey || !encuestasPendientes.has(pollMsgKey)) {
+        console.log(`[POLL-UPDATE] Key no encontrada en pendientes, saltando`);
+        continue;
+      }
 
       const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollMsgKey);
       const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
