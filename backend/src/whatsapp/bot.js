@@ -206,8 +206,14 @@ const iniciar = async () => {
         if (pollCreationKey && encuestasPendientes.has(pollCreationKey)) {
           const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollCreationKey);
           try {
-            const vote = msg.message.pollUpdateMessage.vote;
-            const selectedHashes = vote?.selectedOptions || [];
+            const pollMsg = msg.message.pollUpdateMessage;
+            console.log(`[POLL] Estructura completa:`, JSON.stringify(pollMsg, (key, value) => {
+              if (value?.type === 'Buffer') return `<Buffer ${value.data?.length} bytes>`;
+              if (Buffer.isBuffer(value)) return `<Buffer ${value.length} bytes>`;
+              return value;
+            }, 2));
+            const vote = pollMsg.vote;
+            const selectedHashes = vote?.selectedOptions || vote?.selectedSha256 || [];
             console.log(`[POLL] Voto recibido — servicio: ${servicioId}, hashes: ${selectedHashes.length}`);
 
             if (selectedHashes.length > 0) {
