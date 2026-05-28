@@ -200,11 +200,55 @@ const iniciar = async () => {
       const remoteJid = msg.key.remoteJid;
       if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@broadcast')) continue;
 
-      // Log poll votes para debug
+      // Procesar voto de encuesta de calificación
       if (msg.message.pollUpdateMessage) {
-        console.log(`[POLL-UPSERT] Voto recibido vía messages.upsert`);
-        console.log(`[POLL-UPSERT] pollCreationMessageKey:`, JSON.stringify(msg.message.pollUpdateMessage.pollCreationMessageKey));
-        console.log(`[POLL-UPSERT] Encuestas pendientes:`, [...encuestasPendientes.keys()]);
+        const pollCreationKey = msg.message.pollUpdateMessage.pollCreationMessageKey?.id;
+        if (pollCreationKey && encuestasPendientes.has(pollCreationKey)) {
+          const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollCreationKey);
+          try {
+            const vote = msg.message.pollUpdateMessage.vote;
+            const selectedHashes = vote?.selectedOptions || [];
+            console.log(`[POLL] Voto recibido — servicio: ${servicioId}, hashes: ${selectedHashes.length}`);
+
+            if (selectedHashes.length > 0) {
+              const crypto = require('crypto');
+              const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
+              const opcionHashes = opciones.map(op => crypto.createHash('sha256').update(Buffer.from(op)).digest());
+
+              let calificacion = 0;
+              for (const voteHash of selectedHashes) {
+                const hashBuf = Buffer.isBuffer(voteHash) ? voteHash : Buffer.from(voteHash);
+                const idx = opcionHashes.findIndex(h => h.equals(hashBuf));
+                console.log(`[POLL] Comparando hash, match idx: ${idx}`);
+                if (idx !== -1) { calificacion = idx + 1; break; }
+              }
+
+              console.log(`[POLL] Calificación mapeada: ${calificacion}`);
+
+              if (calificacion >= 1 && calificacion <= 5) {
+                await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } }).catch(() => {});
+                const jid = telCliente.includes('@') ? telCliente : `${telCliente}@s.whatsapp.net`;
+                await sock.sendMessage(jid, {
+                  text: calificacion >= 4
+                    ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊'
+                    : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪',
+                });
+                encuestasPendientes.delete(pollCreationKey);
+                console.log(`[POLL] ✅ Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) guardada`);
+                try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
+              } else {
+                console.log(`[POLL] ⚠️ No se pudo mapear. Hashes de opciones:`);
+                opcionHashes.forEach((h, i) => console.log(`  ${i}: ${h.toString('hex').substring(0, 16)}...`));
+                selectedHashes.forEach((h, i) => {
+                  const buf = Buffer.isBuffer(h) ? h : Buffer.from(h);
+                  console.log(`  Voto ${i}: ${buf.toString('hex').substring(0, 16)}...`);
+                });
+              }
+            }
+          } catch (err) {
+            console.error('[POLL] Error procesando voto:', err.message);
+          }
+        }
         continue;
       }
 
