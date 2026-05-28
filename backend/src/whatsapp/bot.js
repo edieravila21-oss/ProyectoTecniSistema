@@ -239,16 +239,29 @@ const iniciar = async () => {
               continue;
             }
 
-            // Asegurar que encPayload y encIv sean Buffers
-            const voteFixed = {
-              ...vote,
-              encPayload: vote.encPayload ? Buffer.from(vote.encPayload) : undefined,
-              encIv: vote.encIv ? Buffer.from(vote.encIv) : undefined,
+            // Convertir protobuf Uint8Array → Buffer
+            const toBuffer = (val) => {
+              if (!val) return undefined;
+              if (Buffer.isBuffer(val)) return val;
+              if (val instanceof Uint8Array) return Buffer.from(val);
+              if (typeof val === 'object' && val.length !== undefined) return Buffer.from(new Uint8Array(Object.values(val)));
+              return Buffer.from(val);
             };
 
+            const voteFixed = {
+              encPayload: toBuffer(vote.encPayload),
+              encIv: toBuffer(vote.encIv),
+            };
+
+            // Usar el JID real del bot, no el LID
+            const realCreatorJid = meJid || pollCreatorJid;
+
+            console.log(`[POLL] voteFixed.encPayload: ${voteFixed.encPayload?.length}b, encIv: ${voteFixed.encIv?.length}b`);
+            console.log(`[POLL] Usando creatorJid: ${realCreatorJid}`);
+
             const selectedHashes = decryptPollVote(voteFixed, {
-              encKey: Buffer.from(pollEncKey),
-              pollCreatorJid,
+              encKey: toBuffer(pollEncKey),
+              pollCreatorJid: realCreatorJid,
               voterJid,
             });
 
