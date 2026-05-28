@@ -76,7 +76,7 @@ const crear = async (req, res, next) => {
   try {
     const {
       clienteId, equipoId, tecnicoId, descripcion_falla, fecha_programada,
-      hora_inicio, hora_fin, direccion_servicio, valor_estimado, notas_admin, origen,
+      hora_inicio, hora_fin, direccion_servicio, valor_estimado, notas_admin, origen, tipo_servicio,
     } = req.body;
 
     if (!clienteId) {
@@ -89,7 +89,7 @@ const crear = async (req, res, next) => {
       if (equipo) tipoEquipo = equipo.tipo;
     }
 
-    const checklistItems = getChecklistPorTipo(tipoEquipo);
+    const checklistItems = getChecklistPorTipo(tipoEquipo, tipo_servicio);
 
     const servicio = await prisma.servicio.create({
       data: {
@@ -97,6 +97,7 @@ const crear = async (req, res, next) => {
         equipoId,
         tecnicoId,
         estado: tecnicoId ? 'asignado' : 'pendiente',
+        tipo_servicio: tipo_servicio || null,
         descripcion_falla,
         fecha_programada: fecha_programada ? new Date(fecha_programada) : null,
         hora_inicio,

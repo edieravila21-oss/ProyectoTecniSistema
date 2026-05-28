@@ -43,7 +43,7 @@ export const Agenda = () => {
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [form, setForm] = useState({
-    clienteId: '', equipoId: '', tecnicoId: '', descripcion_falla: '',
+    clienteId: '', equipoId: '', tecnicoId: '', descripcion_falla: '', tipo_servicio: '',
     fecha_programada: format(new Date(), 'yyyy-MM-dd'), hora_inicio: '08:00', hora_fin: '10:00',
     direccion_servicio: '', valor_estimado: '40000',
   });
@@ -202,6 +202,13 @@ export const Agenda = () => {
               <Select value={form.tecnicoId} onChange={e => setForm({...form, tecnicoId: e.target.value})} className="rounded-xl">
                 <option value="">Seleccionar técnico</option>
                 {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+              </Select>
+              <Select value={form.tipo_servicio} onChange={e => setForm({...form, tipo_servicio: e.target.value})} className="rounded-xl">
+                <option value="">Tipo de servicio</option>
+                <option value="mantenimiento">Mantenimiento</option>
+                <option value="reparacion">Reparación</option>
+                <option value="instalacion">Instalación</option>
+                <option value="diagnostico">Diagnóstico</option>
               </Select>
               <Input type="date" value={form.fecha_programada} onChange={e => setForm({...form, fecha_programada: e.target.value})} required className="rounded-xl" />
               <Input type="time" value={form.hora_inicio} onChange={e => setForm({...form, hora_inicio: e.target.value})} className="rounded-xl" />

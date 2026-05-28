@@ -56,6 +56,7 @@ export interface Servicio {
   equipoId?: string;
   tecnicoId?: string;
   estado: EstadoServicio;
+  tipo_servicio?: 'mantenimiento' | 'reparacion' | 'instalacion' | 'diagnostico';
   descripcion_falla?: string;
   fecha_programada?: string;
   hora_inicio?: string;

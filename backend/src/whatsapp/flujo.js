@@ -308,12 +308,14 @@ const procesarBuffer = async (telefono, sesiones) => {
       equipoId = equipo.id;
     }
 
-    const checklistItems = getChecklistPorTipo(sesion.datos.tipo_equipo || 'otro');
+    const tipoServicio = sesion.datos.tipo_servicio || 'reparacion';
+    const checklistItems = getChecklistPorTipo(sesion.datos.tipo_equipo || 'otro', tipoServicio);
 
     const servicio = await prisma.servicio.create({
       data: {
         clienteId, equipoId, tecnicoId,
         estado: 'asignado',
+        tipo_servicio: tipoServicio,
         descripcion_falla: sesion.datos.falla || 'No especificada',
         fecha_programada: new Date(slotElegido.fecha),
         hora_inicio: slotElegido.hora_inicio, hora_fin: slotElegido.hora_fin,

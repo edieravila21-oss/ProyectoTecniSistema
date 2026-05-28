@@ -39,6 +39,13 @@ enum MetodoPago {
   link_pago
 }
 
+enum TipoServicio {
+  mantenimiento
+  reparacion
+  instalacion
+  diagnostico
+}
+
 enum OrigenServicio {
   whatsapp
   manual
@@ -185,6 +192,7 @@ model Servicio {
   equipoId            String?
   tecnicoId           String?
   estado              EstadoServicio @default(pendiente)
+  tipo_servicio       TipoServicio?
   descripcion_falla   String?
   fecha_programada    DateTime?
   hora_inicio         String?
