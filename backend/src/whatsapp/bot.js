@@ -28,8 +28,10 @@ const MAX_RECONNECT = 20;
 const sesiones = new Map();
 // Mapa LID → teléfono real (se llena al sincronizar contactos)
 const lidToPhone = new Map();
-// Mapa pollMessageId → { servicioId, telefono } para calificaciones
+// Mapa pollMessageId → { servicioId, telefono, pollMessage } para calificaciones
 const encuestasPendientes = new Map();
+// Cache de mensajes de poll con messageSecret (no dejar que el echo lo sobreescriba)
+const pollMsgCache = new Map();
 
 const resolverTelefono = (remoteJid) => {
   if (remoteJid.endsWith('@s.whatsapp.net')) {
@@ -57,6 +59,15 @@ const iniciar = async () => {
     auth: state,
     logger: pino({ level: 'silent' }),
     browser: ['RefriElectri Pro', 'Chrome', '1.0.0'],
+    getMessage: async (key) => {
+      const cached = pollMsgCache.get(key.id);
+      if (cached) {
+        const hasSecret = !!cached.messageContextInfo?.messageSecret;
+        console.log(`[POLL] getMessage: cached poll ${key.id} (hasSecret: ${hasSecret})`);
+        return cached;
+      }
+      return undefined;
+    },
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -204,45 +215,81 @@ const iniciar = async () => {
       if (msg.message.pollUpdateMessage) {
         const pollCreationKey = msg.message.pollUpdateMessage.pollCreationMessageKey?.id;
         if (pollCreationKey && encuestasPendientes.has(pollCreationKey)) {
-          const { servicioId, telefono: telCliente, pollMessage } = encuestasPendientes.get(pollCreationKey);
+          const { servicioId, telefono: telCliente } = encuestasPendientes.get(pollCreationKey);
+          const cachedMsg = pollMsgCache.get(pollCreationKey);
+
           try {
-            const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
-            const votes = getAggregateVotesInPollMessage({
-              message: pollMessage.message,
-              pollUpdates: [msg.message.pollUpdateMessage],
+            const { decryptPollVote } = require('@whiskeysockets/baileys');
+            const crypto = require('crypto');
+
+            const pollEncKey = cachedMsg?.messageContextInfo?.messageSecret;
+            const vote = msg.message.pollUpdateMessage.vote;
+            const voterJid = msg.key.participant || msg.key.remoteJid;
+            const meJid = sock.user?.id;
+            const pollCreatorJid = msg.message.pollUpdateMessage.pollCreationMessageKey?.remoteJid || meJid;
+
+            console.log(`[POLL] pollEncKey length: ${pollEncKey?.length || 'null'}`);
+            console.log(`[POLL] voterJid: ${voterJid}, pollCreatorJid: ${pollCreatorJid}`);
+
+            if (!pollEncKey) {
+              console.log(`[POLL] ⚠️ No messageSecret en cache — no se puede descifrar`);
+              continue;
+            }
+
+            const selectedHashes = decryptPollVote(vote, {
+              encKey: pollEncKey,
+              pollCreatorJid,
+              voterJid,
             });
-            console.log(`[POLL] Votos descifrados:`, JSON.stringify(votes));
+
+            console.log(`[POLL] Hashes descifrados: ${selectedHashes?.length || 0}`);
 
             const opciones = ['⭐ Malo', '⭐⭐ Regular', '⭐⭐⭐ Bueno', '⭐⭐⭐⭐ Muy bueno', '⭐⭐⭐⭐⭐ Excelente'];
-            const votedOption = votes?.find(v => v.voters && v.voters.length > 0);
+            const opcionHashes = opciones.map(op => crypto.createHash('sha256').update(Buffer.from(op)).digest());
 
-            if (votedOption) {
-              const calificacion = opciones.indexOf(votedOption.name) + 1;
-              console.log(`[POLL] Opción votada: "${votedOption.name}" → calificación: ${calificacion}`);
-
-              if (calificacion >= 1 && calificacion <= 5) {
-                await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } }).catch(() => {});
-                const jid = telCliente.includes('@') ? telCliente : `${telCliente}@s.whatsapp.net`;
-                await sock.sendMessage(jid, {
-                  text: calificacion >= 4
-                    ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊'
-                    : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪',
-                });
-                encuestasPendientes.delete(pollCreationKey);
-                console.log(`[POLL] ✅ Calificación ${calificacion}⭐ guardada para servicio ${servicioId}`);
-                try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
+            let calificacion = 0;
+            if (selectedHashes && selectedHashes.length > 0) {
+              for (const selHash of selectedHashes) {
+                const hashBuf = Buffer.isBuffer(selHash) ? selHash : Buffer.from(selHash);
+                const idx = opcionHashes.findIndex(h => h.equals(hashBuf));
+                if (idx !== -1) { calificacion = idx + 1; break; }
               }
+            }
+
+            console.log(`[POLL] Calificación mapeada: ${calificacion}`);
+
+            if (calificacion >= 1 && calificacion <= 5) {
+              await prisma.servicio.update({ where: { id: servicioId }, data: { calificacion_cliente: calificacion } }).catch(() => {});
+              const jid = telCliente.includes('@') ? telCliente : `${telCliente}@s.whatsapp.net`;
+              await sock.sendMessage(jid, {
+                text: calificacion >= 4
+                  ? '¡Muchas gracias por tu calificación! Nos alegra que hayas tenido una buena experiencia 😊'
+                  : '¡Gracias por tu opinión! Trabajaremos para mejorar 💪',
+              });
+              encuestasPendientes.delete(pollCreationKey);
+              pollMsgCache.delete(pollCreationKey);
+              console.log(`[POLL] ✅ Calificación ${calificacion}⭐ (${opciones[calificacion - 1]}) guardada`);
+              try { getIO().to('admin').emit('servicio_calificado', { servicioId, calificacion }); } catch (_) {}
             } else {
-              console.log(`[POLL] ⚠️ No se encontró opción votada en:`, JSON.stringify(votes));
+              console.log(`[POLL] ⚠️ No se pudo mapear`);
+              selectedHashes?.forEach((h, i) => console.log(`  Voto ${i}: ${Buffer.from(h).toString('hex').substring(0, 20)}`));
+              opcionHashes.forEach((h, i) => console.log(`  Opción ${i}: ${h.toString('hex').substring(0, 20)}`));
             }
           } catch (err) {
-            console.error('[POLL] Error procesando voto:', err.message, err.stack);
+            console.error('[POLL] Error procesando voto:', err.message);
           }
         }
         continue;
       }
 
-      if (msg.key.fromMe) continue;
+      if (msg.key.fromMe) {
+        // Si es echo de un poll que ya tenemos en cache, no sobreescribir (proteger messageSecret)
+        if (msg.key.id && pollMsgCache.has(msg.key.id) && (msg.message.pollCreationMessage || msg.message.pollCreationMessageV3)) {
+          const echoHasSecret = !!msg.message?.messageContextInfo?.messageSecret;
+          console.log(`[POLL] Echo de poll ${msg.key.id} (echoHasSecret: ${echoHasSecret}) — no sobreescribir cache`);
+        }
+        continue;
+      }
 
       // Resolver teléfono real: preferir remoteJidAlt (tiene el número), fallback a remoteJid
       const jidReal = msg.key.remoteJidAlt || remoteJid;
@@ -388,7 +435,11 @@ const enviarEncuestaCalificacion = async (telefono, servicioId) => {
   });
 
   if (pollMsg?.key?.id) {
-    encuestasPendientes.set(pollMsg.key.id, { servicioId, telefono, pollMessage: pollMsg });
+    // Guardar mensaje con messageSecret en cache antes de que el echo lo sobreescriba
+    const hasSecret = !!pollMsg.message?.messageContextInfo?.messageSecret;
+    console.log(`[POLL] Poll enviado ${pollMsg.key.id} (hasSecret: ${hasSecret})`);
+    pollMsgCache.set(pollMsg.key.id, pollMsg.message);
+    encuestasPendientes.set(pollMsg.key.id, { servicioId, telefono });
   }
 
   return true;
