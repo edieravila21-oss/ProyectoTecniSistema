@@ -54,10 +54,16 @@ export const WhatsAppPage = () => {
     socket?.on('whatsapp_conversacion_update', () => fetchConversaciones());
     socket?.on('whatsapp_mensaje', () => fetchConversaciones());
     socket?.on('whatsapp_qr', (data: { qr: string }) => { setQrData(data.qr); });
+    socket?.on('servicio_calificado', (data: { servicioId: string; calificacion: number }) => {
+      const estrellas = '⭐'.repeat(data.calificacion);
+      console.log(`[ENCUESTA] Calificación recibida: ${data.calificacion} ${estrellas} — Servicio: ${data.servicioId}`);
+      toast.success(`Calificación recibida: ${estrellas} (${data.calificacion}/5)`);
+    });
     return () => {
       socket?.off('whatsapp_conversacion_update');
       socket?.off('whatsapp_mensaje');
       socket?.off('whatsapp_qr');
+      socket?.off('servicio_calificado');
     };
   }, [socket]);
 
