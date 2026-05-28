@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { getConversaciones, getConversacion, cambiarEstadoConversacion, toggleBotConversacion, agregarNotaConversacion, getEstadoBot, conectarBot, desconectarBot, eliminarConversacion } from '@/api/whatsapp';
+import { getConversaciones, getConversacion, cambiarEstadoConversacion, toggleBotConversacion, agregarNotaConversacion, getEstadoBot, conectarBot, desconectarBot, eliminarConversacion, enviarEncuesta } from '@/api/whatsapp';
+import { Input } from '@/components/ui/input';
 import { useSocketStore } from '@/store/socketStore';
 import { useNotificacionesStore } from '@/store/notificacionesStore';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,9 @@ export const WhatsAppPage = () => {
   const [qrData, setQrData] = useState('');
   const [draggedTel, setDraggedTel] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const [showEncuesta, setShowEncuesta] = useState(false);
+  const [encuestaTel, setEncuestaTel] = useState('');
+  const [enviandoEncuesta, setEnviandoEncuesta] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { socket, whatsappConectado } = useSocketStore();
   const { resetMensajes } = useNotificacionesStore();
@@ -160,18 +164,26 @@ export const WhatsAppPage = () => {
             <span className="flex items-center gap-1.5"><BotOff className="h-3.5 w-3.5 text-purple-500" /> {conversaciones.filter(c => !c.bot_activo).length} pausados</span>
           </div>
           {whatsappConectado ? (
-            <div className="flex items-center gap-1">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-l-full bg-emerald-50 border border-emerald-200 shadow-sm">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs font-semibold text-emerald-600">WhatsApp conectado</span>
-              </div>
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleDesconectar}
-                className="px-2 py-1.5 rounded-r-full bg-red-50 border border-red-200 shadow-sm hover:bg-red-100 transition-colors"
-                title="Desconectar WhatsApp"
+                onClick={() => setShowEncuesta(true)}
+                className="px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 shadow-sm hover:bg-amber-100 transition-colors text-xs font-semibold text-amber-700 flex items-center gap-1.5"
               >
-                <WifiOff className="h-3.5 w-3.5 text-red-400" />
+                ⭐ Enviar encuesta
               </button>
+              <div className="flex items-center gap-0">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-l-full bg-emerald-50 border border-emerald-200 shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-semibold text-emerald-600">WhatsApp conectado</span>
+                </div>
+                <button
+                  onClick={handleDesconectar}
+                  className="px-2 py-1.5 rounded-r-full bg-red-50 border border-red-200 shadow-sm hover:bg-red-100 transition-colors"
+                  title="Desconectar WhatsApp"
+                >
+                  <WifiOff className="h-3.5 w-3.5 text-red-400" />
+                </button>
+              </div>
             </div>
           ) : (
             <Button size="sm" className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md" onClick={handleConectar} disabled={conectando}>
@@ -378,6 +390,50 @@ export const WhatsAppPage = () => {
               <div ref={chatEndRef} />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Encuesta Modal */}
+      {showEncuesta && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <Card className="max-w-sm w-full mx-4 p-8 rounded-3xl">
+            <div className="text-center mb-5">
+              <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">⭐</span>
+              </div>
+              <h3 className="font-bold text-slate-800">Enviar encuesta de calificación</h3>
+              <p className="text-sm text-slate-400 mt-1">El cliente recibirá una encuesta de 1 a 5 estrellas por WhatsApp</p>
+            </div>
+            <Input
+              placeholder="Número (ej: 573001234567)"
+              value={encuestaTel}
+              onChange={e => setEncuestaTel(e.target.value)}
+              className="rounded-xl mb-4"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600"
+                disabled={!encuestaTel.trim() || enviandoEncuesta}
+                onClick={async () => {
+                  setEnviandoEncuesta(true);
+                  try {
+                    await enviarEncuesta(encuestaTel.trim());
+                    toast.success('Encuesta enviada');
+                    setShowEncuesta(false);
+                    setEncuestaTel('');
+                  } catch { toast.error('Error enviando encuesta'); }
+                  finally { setEnviandoEncuesta(false); }
+                }}
+              >
+                {enviandoEncuesta ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Enviar
+              </Button>
+              <Button variant="ghost" className="rounded-xl" onClick={() => { setShowEncuesta(false); setEncuestaTel(''); }}>
+                Cancelar
+              </Button>
+            </div>
+          </Card>
         </div>
       )}
 

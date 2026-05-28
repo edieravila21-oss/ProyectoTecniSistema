@@ -27,3 +27,6 @@ export const desconectarBot = () =>
 
 export const eliminarConversacion = (telefono: string) =>
   api.delete<ApiResponse<{ message: string }>>(`/whatsapp/conversacion/${telefono}`);
+
+export const enviarEncuesta = (telefono: string) =>
+  api.post<ApiResponse<{ message: string }>>('/whatsapp/enviar-encuesta', { telefono });
