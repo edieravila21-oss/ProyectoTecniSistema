@@ -365,6 +365,18 @@ const enviarMensaje = async (telefono, mensaje) => {
   return true;
 };
 
+const enviarImagen = async (telefono, url, caption) => {
+  if (!sock || !estado.conectado) return false;
+  const jid = telefono.includes('@') ? telefono : `${telefono}@s.whatsapp.net`;
+  try {
+    await sock.sendMessage(jid, { image: { url }, caption: caption || '' });
+    return true;
+  } catch (err) {
+    console.error(`[WhatsApp] Error enviando imagen a ${telefono}:`, err.message);
+    return false;
+  }
+};
+
 const enviarEncuestaCalificacion = async (telefono, servicioId) => {
   if (!sock || !estado.conectado) return false;
 
@@ -424,4 +436,4 @@ const desconectar = async () => {
   try { getIO().to('admin').emit('whatsapp_estado', estado); } catch (_) {}
 };
 
-module.exports = { iniciar, enviarMensaje, enviarEncuestaCalificacion, getEstado, conectar, desconectar };
+module.exports = { iniciar, enviarMensaje, enviarImagen, enviarEncuestaCalificacion, getEstado, conectar, desconectar };

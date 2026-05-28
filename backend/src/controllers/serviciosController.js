@@ -275,6 +275,7 @@ const cambiarEstado = async (req, res, next) => {
         cliente: true,
         tecnico: { select: { id: true, nombre: true } },
         equipo: true,
+        fotos: true,
       },
     });
 
@@ -308,14 +309,36 @@ const cambiarEstado = async (req, res, next) => {
       try {
         await enviarMensaje(actualizado.cliente.telefono, mensajes[estado]);
         if (estado === 'completado') {
+          const { enviarImagen } = require('../whatsapp/bot');
+          const tel = actualizado.cliente.telefono;
+
+          // Resumen del trabajo
+          const repuestosTxt = actualizado.repuestos?.length
+            ? actualizado.repuestos.map(r => `• ${r.nombre} x${r.cantidad}`).join('\n')
+            : null;
+          let resumen = `📋 *Resumen del servicio*\n🔧 ${equipo}\n👨‍🔧 Técnico: ${tecnico}`;
+          if (actualizado.notas_tecnico) resumen += `\n📝 ${actualizado.notas_tecnico}`;
+          if (repuestosTxt) resumen += `\n\n🔩 *Repuestos:*\n${repuestosTxt}`;
+          if (actualizado.valor_final) resumen += `\n\n💰 Total: $${actualizado.valor_final.toLocaleString('es-CO')}`;
+
           setTimeout(async () => {
             try {
-              await enviarEncuestaCalificacion(actualizado.cliente.telefono, actualizado.id);
-              console.log(`[WhatsApp] Encuesta de calificación enviada a ${actualizado.cliente.telefono}`);
+              await enviarMensaje(tel, resumen);
+
+              // Enviar fotos antes/después
+              const fotos = actualizado.fotos || [];
+              const fotoAntes = fotos.find(f => f.tipo === 'antes');
+              const fotoDespues = fotos.find(f => f.tipo === 'despues');
+              if (fotoAntes) await enviarImagen(tel, fotoAntes.url, '📷 Antes del servicio');
+              if (fotoDespues) await enviarImagen(tel, fotoDespues.url, '📷 Después del servicio');
+
+              // Encuesta de calificación
+              await enviarEncuestaCalificacion(tel, actualizado.id);
+              console.log(`[WhatsApp] Resumen + encuesta enviados a ${tel}`);
             } catch (err) {
-              console.error('[WhatsApp] Error enviando encuesta:', err.message);
+              console.error('[WhatsApp] Error enviando resumen:', err.message);
             }
-          }, 5000);
+          }, 3000);
         }
       } catch (err) {
         console.error('[WhatsApp] Error enviando notificación:', err.message);
