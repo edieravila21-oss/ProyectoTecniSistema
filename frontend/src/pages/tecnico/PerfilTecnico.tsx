@@ -87,7 +87,7 @@ export const PerfilTecnico = () => {
     <div className="space-y-5 max-w-lg mx-auto pb-20">
       {/* Profile Header */}
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 h-20" />
+        <div className="bg-linear-to-r from-slate-800 to-slate-700 h-20" />
         <div className="px-5 pb-5 -mt-10">
           <div className="flex flex-col items-center text-center">
             {/* Avatar */}
@@ -95,7 +95,7 @@ export const PerfilTecnico = () => {
               {usuario.foto_url ? (
                 <img src={usuario.foto_url} alt={usuario.nombre} className="h-full w-full object-cover" />
               ) : (
-                <span className="bg-gradient-to-br from-blue-100 to-indigo-100 h-full w-full flex items-center justify-center">
+                <span className="bg-linear-to-br from-blue-100 to-indigo-100 h-full w-full flex items-center justify-center">
                   {usuario.nombre.charAt(0)}
                 </span>
               )}
@@ -285,7 +285,7 @@ export const PerfilTecnico = () => {
       {/* Logout */}
       <Button
         variant="destructive"
-        className="w-full min-h-[48px] rounded-xl"
+        className="w-full min-h-12 rounded-xl"
         onClick={handleLogout}
       >
         <LogOut className="h-4 w-4 mr-2" />

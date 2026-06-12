@@ -6,7 +6,7 @@ import {
   getHistorialEquipo, eliminarServicio, corregirEquipo,
 } from '@/api/servicios';
 import { getHistorialCliente } from '@/api/clientes';
-import { useAuthStore } from '@/store/authStore';
+import { getSlaConfigByTipo } from '@/api/slaConfig';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -15,15 +15,29 @@ import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/components/shared/Toast';
 import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
-import type { Servicio, ChecklistItem } from '@/types';
+import type { Servicio, MetodoPago, ConfiguracionSLA } from '@/types';
 import {
-  Phone, MapPin, Navigation, Camera, Check, CheckCircle,
-  Upload, Trash2, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
+  Phone, MapPin, Camera, Check, CheckCircle,
+  Trash2, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
   User, Clock, DollarSign, Star, Plus, X,
 } from 'lucide-react';
 import SignatureCanvas from 'react-signature-canvas';
 
+interface HistorialCliente {
+  stats: { total_servicios: number; total_gastado: number; calificacion_promedio: number };
+  servicios: Servicio[];
+  proximo_recordatorio?: { fecha_proximo_recordatorio: string };
+}
+
 const pasos = ['En camino', 'Llegada', 'Diagnóstico', 'Reparación', 'Cierre'];
+
+const SLA_FALLBACK_CAMINO_MIN = 15;
+const SLA_FALLBACK_EJECUCION_MIN: Record<string, number> = {
+  diagnostico: 30,
+  mantenimiento: 45,
+  reparacion: 120,
+  instalacion: 180,
+};
 
 const repuestosComunes: Record<string, { nombre: string; precio: number }[]> = {
   aire_acondicionado: [
@@ -61,7 +75,6 @@ const repuestosComunes: Record<string, { nombre: string; precio: number }[]> = {
 export const ServicioActivo = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { usuario } = useAuthStore();
   const [servicio, setServicio] = useState<Servicio | null>(null);
   const [loading, setLoading] = useState(true);
   const [pasoActual, setPasoActual] = useState(0);
@@ -74,9 +87,9 @@ export const ServicioActivo = () => {
   const [showExito, setShowExito] = useState(false);
   const sigRef = useRef<SignatureCanvas>(null);
   const [firmada, setFirmada] = useState(false);
-  const [historialEquipo, setHistorialEquipo] = useState<any[]>([]);
+  const [historialEquipo, setHistorialEquipo] = useState<Servicio[]>([]);
   const [historialTotal, setHistorialTotal] = useState(0);
-  const [clienteHistorial, setClienteHistorial] = useState<any>(null);
+  const [clienteHistorial, setClienteHistorial] = useState<HistorialCliente | null>(null);
   const [activeDiagItem, setActiveDiagItem] = useState<string | null>(null);
   const [diagEstado, setDiagEstado] = useState<'observacion' | 'falla' | null>(null);
   const [diagValue, setDiagValue] = useState('');
@@ -84,9 +97,10 @@ export const ServicioActivo = () => {
   const [fallaConfirmada, setFallaConfirmada] = useState<boolean | null>(null);
   const [diagnosticoFinal, setDiagnosticoFinal] = useState('');
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
-  const [tiempoServicio, setTiempoServicio] = useState('0:00');
   const [showCustomRepuesto, setShowCustomRepuesto] = useState(false);
   const [customRepuestoNombre, setCustomRepuestoNombre] = useState('');
+  const [slaSegundos, setSlaSegundos] = useState(0);
+  const [slaConfig, setSlaConfig] = useState<ConfiguracionSLA | null>(null);
 
   const fetchServicio = async () => {
     if (!id) return;
@@ -109,11 +123,12 @@ export const ServicioActivo = () => {
       if (res.data.notas_tecnico) setDescripcionTrabajo(res.data.notas_tecnico);
       if (res.data.falla_confirmada !== undefined && res.data.falla_confirmada !== null) setFallaConfirmada(res.data.falla_confirmada);
       if (res.data.diagnostico_final) setDiagnosticoFinal(res.data.diagnostico_final);
-      if (res.data.repuestos) setRepuestos(res.data.repuestos as any[]);
+      if (res.data.repuestos) setRepuestos(res.data.repuestos);
     } catch { toast.error('Error cargando servicio'); }
     finally { setLoading(false); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(() => { fetchServicio(); }, [id]);
 
   useEffect(() => {
@@ -125,6 +140,7 @@ export const ServicioActivo = () => {
       ];
       const marcaEquipo = servicio.equipo.marca || '';
       const esConocida = marcasConocidas.includes(marcaEquipo);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCorreccionData({
         marca: esConocida ? marcaEquipo : marcaEquipo ? 'Otra' : '',
         marcaOtra: esConocida ? '' : marcaEquipo,
@@ -132,6 +148,7 @@ export const ServicioActivo = () => {
         tecnologia: '',
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicio?.equipo?.id]);
 
   useEffect(() => {
@@ -148,23 +165,31 @@ export const ServicioActivo = () => {
         .then(r => setClienteHistorial(r.data.data))
         .catch(() => {});
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicio?.equipoId, servicio?.clienteId]);
 
+  // SLA live timer — tracks travel (en_camino) or execution (en_servicio)
   useEffect(() => {
-    if (!servicio?.fecha_inicio_real || servicio.estado === 'completado') return;
-    const inicio = new Date(servicio.fecha_inicio_real).getTime();
-    const update = () => {
-      const diff = Date.now() - inicio;
-      const totalSecs = Math.floor(diff / 1000);
-      const hrs = Math.floor(totalSecs / 3600);
-      const mins = Math.floor((totalSecs % 3600) / 60);
-      const secs = totalSecs % 60;
-      setTiempoServicio(hrs > 0 ? `${hrs}h ${mins.toString().padStart(2, '0')}m` : `${mins}:${secs.toString().padStart(2, '0')}`);
-    };
-    update();
-    const interval = setInterval(update, 1000);
+    const startIso = servicio?.estado === 'en_camino'
+      ? servicio.fecha_en_camino
+      : servicio?.estado === 'en_servicio'
+        ? servicio.fecha_inicio_real
+        : null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!startIso) { setSlaSegundos(0); return; }
+    const inicio = new Date(startIso).getTime();
+    const tick = () => setSlaSegundos(Math.floor((Date.now() - inicio) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [servicio?.fecha_inicio_real, servicio?.estado]);
+  }, [servicio?.estado, servicio?.fecha_en_camino, servicio?.fecha_inicio_real]);
+
+  useEffect(() => {
+    if (!servicio?.tipo_servicio) return;
+    getSlaConfigByTipo(servicio.tipo_servicio)
+      .then(r => setSlaConfig(r.data.data))
+      .catch(() => { /* usa fallback hardcodeado */ });
+  }, [servicio?.tipo_servicio]);
 
   const handleCambiarEstado = async (estado: string) => {
     if (!id) return;
@@ -173,7 +198,7 @@ export const ServicioActivo = () => {
       await cambiarEstadoServicio(id, estado);
       toast.success(`Estado: ${estado.replace('_', ' ')}`);
       fetchServicio();
-    } catch (err: any) { toast.error(err.response?.data?.error || 'Error'); }
+    } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error'); }
     finally { setSaving(false); }
   };
 
@@ -185,7 +210,7 @@ export const ServicioActivo = () => {
       await eliminarServicio(id);
       toast.success('Servicio eliminado');
       navigate('/tecnico/agenda');
-    } catch (err: any) { toast.error(err.response?.data?.error || 'Error eliminando'); }
+    } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error eliminando'); }
   };
 
   const handleChecklistItem = async (itemId: string) => {
@@ -202,7 +227,7 @@ export const ServicioActivo = () => {
       c => c.categoria === 'cierre' && !c.completado && c.descripcion.toLowerCase().includes(keyword)
     );
     if (item && id) {
-      try { await marcarChecklistItem(id, item.id); } catch {}
+      try { await marcarChecklistItem(id, item.id); } catch { /* best-effort */ }
     }
   };
 
@@ -212,7 +237,7 @@ export const ServicioActivo = () => {
       c => c.categoria === 'llegada' && !c.completado && c.descripcion.toLowerCase().includes(keyword)
     );
     if (item && id) {
-      try { await marcarChecklistItem(id, item.id); } catch {}
+      try { await marcarChecklistItem(id, item.id); } catch { /* best-effort */ }
     }
   };
 
@@ -222,13 +247,13 @@ export const ServicioActivo = () => {
       c => c.categoria === 'reparacion' && !c.completado && c.descripcion.toLowerCase().includes(keyword)
     );
     if (item && id) {
-      try { await marcarChecklistItem(id, item.id); } catch {}
+      try { await marcarChecklistItem(id, item.id); } catch { /* best-effort */ }
     }
   };
 
   const handleAvanzarACierre = async () => {
     if (id && repuestos.length > 0) {
-      try { await actualizarServicio(id, { repuestos } as any); } catch {}
+      try { await actualizarServicio(id, { repuestos }); } catch { /* best-effort save */ }
     }
     setPasoActual(4);
   };
@@ -280,6 +305,7 @@ export const ServicioActivo = () => {
     if (item && id) {
       marcarChecklistItem(id, item.id).then(() => fetchServicio()).catch(() => {});
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valorFinal, metodoPago]);
 
   const handleCerrarServicio = async () => {
@@ -305,17 +331,17 @@ export const ServicioActivo = () => {
 
       await actualizarServicio(id, {
         valor_final: parseFloat(valorFinal),
-        metodo_pago: metodoPago as any,
+        metodo_pago: metodoPago as MetodoPago,
         notas_tecnico: descripcionTrabajo,
-        falla_confirmada: fallaConfirmada,
+        falla_confirmada: fallaConfirmada ?? undefined,
         diagnostico_final: fallaConfirmada ? servicio.descripcion_falla || '' : diagnosticoFinal,
         repuestos: repuestos.length > 0 ? repuestos : undefined,
-      } as any);
+      });
 
       await cambiarEstadoServicio(id, 'completado');
       setShowExito(true);
       setTimeout(() => navigate('/tecnico/agenda'), 3000);
-    } catch (err: any) { toast.error(err.response?.data?.error || 'Error cerrando servicio'); }
+    } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error cerrando servicio'); }
     finally { setSaving(false); }
   };
 
@@ -348,7 +374,46 @@ export const ServicioActivo = () => {
         ))}
       </div>
 
-      {/* Timer — hidden from UI but still runs for SLA tracking */}
+      {/* SLA Timer */}
+      {(servicio.estado === 'en_camino' || servicio.estado === 'en_servicio') && (() => {
+        const isTraslado = servicio.estado === 'en_camino';
+        const maxMin = isTraslado
+          ? (slaConfig?.max_tiempo_camino_min ?? SLA_FALLBACK_CAMINO_MIN)
+          : (slaConfig?.max_tiempo_ejecucion_min ?? SLA_FALLBACK_EJECUCION_MIN[servicio.tipo_servicio ?? ''] ?? 60);
+        const elapsedMin = slaSegundos / 60;
+        const pct = Math.min((elapsedMin / maxMin) * 100, 100);
+        const vencido = elapsedMin >= maxMin;
+        const enRiesgo = pct >= 75 && !vencido;
+        const mm = String(Math.floor(slaSegundos / 60)).padStart(2, '0');
+        const ss = String(slaSegundos % 60).padStart(2, '0');
+        const maxMm = String(maxMin).padStart(2, '0');
+        return (
+          <div className={`rounded-xl px-3 py-2.5 flex items-center gap-3 ${
+            vencido ? 'bg-red-50 border border-red-200' :
+            enRiesgo ? 'bg-amber-50 border border-amber-200' :
+            'bg-slate-50 border border-slate-100'
+          }`}>
+            <Clock className={`h-4 w-4 shrink-0 ${vencido ? 'text-red-500' : enRiesgo ? 'text-amber-500' : 'text-slate-400'}`} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-[11px] font-semibold uppercase tracking-wider ${vencido ? 'text-red-700' : enRiesgo ? 'text-amber-700' : 'text-slate-500'}`}>
+                  SLA {isTraslado ? 'traslado' : 'ejecución'}
+                  {vencido && ' · VENCIDO'}
+                </span>
+                <span className={`text-xs font-mono font-bold tabular-nums ${vencido ? 'text-red-700' : enRiesgo ? 'text-amber-700' : 'text-slate-700'}`}>
+                  {mm}:{ss} / {maxMm}:00
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-none ${vencido ? 'bg-red-500' : enRiesgo ? 'bg-amber-500' : 'bg-green-500'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* PASO 0 — EN CAMINO */}
       {pasoActual === 0 && (
@@ -404,17 +469,17 @@ export const ServicioActivo = () => {
               </div>
 
               {servicio.estado === 'asignado' && (
-                <Button className="w-full min-h-[48px] text-base" onClick={() => handleCambiarEstado('en_camino')} disabled={saving}>
+                <Button className="w-full min-h-12 text-base" onClick={() => handleCambiarEstado('en_camino')} disabled={saving}>
                   Estoy en camino <ArrowRight className="h-5 w-5 ml-1" />
                 </Button>
               )}
               {servicio.estado === 'en_camino' && (
-                <Button className="w-full min-h-[48px] text-base bg-green-600 hover:bg-green-700" onClick={() => { handleCambiarEstado('en_servicio'); setPasoActual(1); }} disabled={saving}>
+                <Button className="w-full min-h-12 text-base bg-green-600 hover:bg-green-700" onClick={() => { handleCambiarEstado('en_servicio'); setPasoActual(1); }} disabled={saving}>
                   Iniciar servicio <Check className="h-5 w-5 ml-1" />
                 </Button>
               )}
               {servicio.estado === 'en_servicio' && (
-                <Button className="w-full min-h-[48px] text-base" onClick={() => setPasoActual(1)}>
+                <Button className="w-full min-h-12 text-base" onClick={() => setPasoActual(1)}>
                   Continuar servicio <ArrowRight className="h-5 w-5 ml-1" />
                 </Button>
               )}
@@ -459,9 +524,9 @@ export const ServicioActivo = () => {
                 )}
                 <div className="space-y-2">
                   {clienteHistorial.servicios
-                    .filter((s: any) => s.id !== id)
+                    .filter((s) => s.id !== id)
                     .slice(0, 5)
-                    .map((s: any) => (
+                    .map((s) => (
                     <div key={s.id} className="bg-slate-50 rounded-xl p-3 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-slate-500">
@@ -537,12 +602,12 @@ export const ServicioActivo = () => {
                 <img key={f.id} src={f.url} alt="Antes" className="mb-2 rounded-lg w-full max-h-48 object-cover" />
               ))}
               {!servicio.fotos?.some(f => f.tipo === 'antes') && (
-                <Button variant="outline" className="w-full min-h-[48px]" onClick={() => handleSubirFoto('antes')} disabled={uploading}>
+                <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes')} disabled={uploading}>
                   <Camera className="h-5 w-5 mr-2" />{uploading ? 'Subiendo...' : 'Tomar foto antes del servicio'}
                 </Button>
               )}
               {servicio.fotos?.some(f => f.tipo === 'antes') && (
-                <Button variant="outline" className="w-full min-h-[40px] text-xs text-slate-500" onClick={() => handleSubirFoto('antes')} disabled={uploading}>
+                <Button variant="outline" className="w-full min-h-10 text-xs text-slate-500" onClick={() => handleSubirFoto('antes')} disabled={uploading}>
                   <Camera className="h-4 w-4 mr-1" />Agregar otra foto antes
                 </Button>
               )}
@@ -564,7 +629,7 @@ export const ServicioActivo = () => {
                   return (
                     <div
                       key={item.id}
-                      className={`flex items-start gap-3 w-full p-3 rounded-lg border text-left min-h-[48px] transition-opacity ${
+                      className={`flex items-start gap-3 w-full p-3 rounded-lg border text-left min-h-12 transition-opacity ${
                         (isFotoItem && !item.completado) || bloqueadoSinFoto ? 'opacity-50 cursor-not-allowed' : ''
                       } ${item.completado ? 'bg-green-50 border-green-200' : ''} ${!isDisabled ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                       onClick={() => !isDisabled && handleChecklistItem(item.id)}
@@ -698,7 +763,7 @@ export const ServicioActivo = () => {
               })()}
             </div>
 
-            <Button className="w-full min-h-[48px]" onClick={() => setPasoActual(2)}
+            <Button className="w-full min-h-12" onClick={() => setPasoActual(2)}
               disabled={!itemsPorCat('llegada').every(i => i.completado)}>
               Continuar al diagnóstico <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
@@ -775,7 +840,7 @@ export const ServicioActivo = () => {
                       isExpanded ? 'border-blue-300 ring-1 ring-blue-300' : 'bg-white'
                     }`}>
                       <button
-                        className="flex items-center gap-3 w-full p-3 text-left min-h-[48px]"
+                        className="flex items-center gap-3 w-full p-3 text-left min-h-12"
                         onClick={() => {
                           if (!item.completado) {
                             setActiveDiagItem(isExpanded ? null : item.id);
@@ -883,7 +948,7 @@ export const ServicioActivo = () => {
               />
             </div>
             <div>
-              <Button className="w-full min-h-[48px]" onClick={() => setPasoActual(3)}
+              <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}
                 disabled={!itemsPorCat('diagnostico').every(i => i.completado)}>
                 Continuar a reparación <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
@@ -1072,7 +1137,7 @@ export const ServicioActivo = () => {
                   return !d.includes('repuestos') && !d.includes('gas cargado');
                 })
                 .map(item => (
-                <button key={item.id} className="flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-[48px]" onClick={() => !item.completado && handleChecklistItem(item.id)} disabled={item.completado}>
+                <button key={item.id} className="flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12" onClick={() => !item.completado && handleChecklistItem(item.id)} disabled={item.completado}>
                   <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
                   <span className={`text-sm ${item.completado ? 'line-through text-muted-foreground' : ''}`}>{item.descripcion}</span>
                 </button>
@@ -1095,10 +1160,10 @@ export const ServicioActivo = () => {
                 <p className="text-xs text-amber-600 mt-2 font-medium">Máximo de 4 fotos alcanzado</p>
               ) : (
                 <div className="flex gap-2 mt-2">
-                  <Button variant="outline" className="flex-1 min-h-[48px]" onClick={() => handleSubirFoto('durante')} disabled={uploading}>
+                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('durante')} disabled={uploading}>
                     <Camera className="h-4 w-4 mr-1" />Durante
                   </Button>
-                  <Button variant="outline" className="flex-1 min-h-[48px]" onClick={() => handleSubirFoto('despues')} disabled={uploading}>
+                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('despues')} disabled={uploading}>
                     <Camera className="h-4 w-4 mr-1" />Después
                   </Button>
                 </div>
@@ -1106,7 +1171,7 @@ export const ServicioActivo = () => {
             </div>
 
             <div>
-              <Button className="w-full min-h-[48px]" onClick={handleAvanzarACierre}
+              <Button className="w-full min-h-12" onClick={handleAvanzarACierre}
                 disabled={!itemsPorCat('reparacion').every(i => i.completado) || !servicio.fotos?.some(f => f.tipo === 'despues')}>
                 Continuar al cierre <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
@@ -1163,7 +1228,7 @@ export const ServicioActivo = () => {
                     return (
                       <button
                         key={item.id}
-                        className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-[48px] ${isAuto && !item.completado ? 'opacity-60' : ''}`}
+                        className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 ${isAuto && !item.completado ? 'opacity-60' : ''}`}
                         onClick={() => !item.completado && !isAuto && handleChecklistItem(item.id)}
                         disabled={item.completado || isAuto}
                       >
@@ -1300,7 +1365,7 @@ export const ServicioActivo = () => {
             </div>
 
             <Button
-              className="w-full min-h-[56px] text-base bg-green-600 hover:bg-green-700 text-white"
+              className="w-full min-h-14 text-base bg-green-600 hover:bg-green-700 text-white"
               onClick={handleCerrarServicio}
               disabled={saving || !checklistCompleto || fallaConfirmada === null || (fallaConfirmada === false && !diagnosticoFinal)}
             >

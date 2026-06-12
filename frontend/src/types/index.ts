@@ -61,6 +61,7 @@ export interface Servicio {
   fecha_programada?: string;
   hora_inicio?: string;
   hora_fin?: string;
+  fecha_en_camino?: string;
   fecha_inicio_real?: string;
   fecha_fin_real?: string;
   direccion_servicio?: string;
@@ -189,6 +190,15 @@ export interface TecnicoEstado {
   estado: string;
   servicios_hoy: number;
   servicio_activo?: { id: string; estado: string; direccion_servicio?: string };
+}
+
+export interface ConfiguracionSLA {
+  id: string;
+  tipo_servicio: string;
+  max_tiempo_camino_min: number;
+  max_tiempo_ejecucion_min: number;
+  descripcion?: string;
+  activo: boolean;
 }
 
 export interface Configuracion {
