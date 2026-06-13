@@ -35,4 +35,27 @@ const vapidPublicKey = (req, res) => {
   res.json({ success: true, data: { publicKey: process.env.VAPID_PUBLIC_KEY || '' } });
 };
 
-module.exports = { suscribir, desuscribir, vapidPublicKey };
+const enviarPushPrueba = async (req, res, next) => {
+  try {
+    const { enviarPushARoles } = require('../services/pushService');
+
+    // Contar suscripciones activas de técnicos
+    const subs = await prisma.pushSubscription.findMany({
+      where: { usuario: { rol: 'tecnico', activo: true } },
+      select: { id: true },
+    });
+
+    await enviarPushARoles(
+      ['tecnico'],
+      '🔔 Notificación de prueba',
+      'Las notificaciones push están funcionando correctamente en tu dispositivo.',
+      { url: '/tecnico/agenda', tag: 'push-test' }
+    );
+
+    res.json({ success: true, data: { enviadas: subs.length } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { suscribir, desuscribir, vapidPublicKey, enviarPushPrueba };

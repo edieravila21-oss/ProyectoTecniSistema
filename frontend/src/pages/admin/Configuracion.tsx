@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getConfiguracion, actualizarConfiguracion } from '@/api/configuracion';
+import api from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -7,12 +8,29 @@ import { Card } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/components/shared/Toast';
 import type { Configuracion as ConfigType } from '@/types';
-import { Building2, Clock, DollarSign, MessageCircleMore, Bell, Save, Bot } from 'lucide-react';
+import { Building2, Clock, DollarSign, MessageCircleMore, Bell, Save, Bot, Send } from 'lucide-react';
 
 export const Configuracion = () => {
   const [config, setConfig] = useState<ConfigType | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
+
+  const enviarPushPrueba = async () => {
+    setTestingPush(true);
+    try {
+      const { data: res } = await api.post<{ success: boolean; data: { enviadas: number } }>('/push/test');
+      if (res.data.enviadas === 0) {
+        toast.error('No hay técnicos con notificaciones activas. Asegúrate de que hayan abierto la app en Android.');
+      } else {
+        toast.success(`Notificación enviada a ${res.data.enviadas} dispositivo${res.data.enviadas !== 1 ? 's' : ''}`);
+      }
+    } catch {
+      toast.error('Error enviando notificación de prueba');
+    } finally {
+      setTestingPush(false);
+    }
+  };
 
   useEffect(() => {
     getConfiguracion()
@@ -137,6 +155,34 @@ export const Configuracion = () => {
     },
   ];
 
+  const pushSection = (
+    <Card className="p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="h-9 w-9 rounded-xl bg-orange-50 flex items-center justify-center">
+          <Send className="h-4 w-4 text-orange-600" />
+        </div>
+        <h3 className="font-semibold text-slate-800">Notificaciones Push</h3>
+      </div>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-500">
+          Envía una notificación de prueba a todos los técnicos que tengan la app instalada en Android. Útil para verificar que las notificaciones push están funcionando correctamente.
+        </p>
+        <Button
+          onClick={enviarPushPrueba}
+          disabled={testingPush}
+          variant="outline"
+          className="rounded-xl border-orange-200 text-orange-700 hover:bg-orange-50"
+        >
+          <Send className="h-4 w-4 mr-2" />
+          {testingPush ? 'Enviando...' : 'Enviar notificación de prueba a técnicos'}
+        </Button>
+        <p className="text-xs text-slate-400">
+          El técnico debe haber abierto la app en su Android y aceptado los permisos de notificación al menos una vez.
+        </p>
+      </div>
+    </Card>
+  );
+
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
       <div className="flex items-center justify-between">
@@ -160,6 +206,7 @@ export const Configuracion = () => {
           {content}
         </Card>
       ))}
+      {pushSection}
     </div>
   );
 };
