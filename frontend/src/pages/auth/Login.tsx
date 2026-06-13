@@ -48,8 +48,9 @@ export const Login = () => {
       login(res.data.token, res.data.usuario);
       toast.success(`Bienvenido, ${res.data.usuario.nombre}`);
       navigate('/admin/dashboard');
-    } catch {
-      toast.error('PIN incorrecto');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'PIN incorrecto';
+      toast.error(msg);
       setPin('');
       setLoading(false);
     }
@@ -63,8 +64,9 @@ export const Login = () => {
       login(res.data.token, res.data.usuario);
       toast.success(`Bienvenido, ${res.data.usuario.nombre}`);
       navigate('/tecnico/agenda');
-    } catch {
-      toast.error('PIN incorrecto');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'PIN incorrecto';
+      toast.error(msg);
       setPin('');
       setLoading(false);
     }
