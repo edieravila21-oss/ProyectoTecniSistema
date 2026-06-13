@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '@/api/client';
 
 const SW_URL = '/sw.js';
@@ -12,35 +13,43 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export function usePushNotifications(enabled: boolean) {
   const attemptedRef = useRef(false);
+  const navigate = useNavigate();
 
+  // Escucha mensajes del service worker para navegar al tocar una notificación
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'NAVIGATE' && event.data.url) {
+        navigate(event.data.url);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, [navigate]);
+
+  // Suscripción al push (solo una vez por sesión)
   useEffect(() => {
     if (!enabled || attemptedRef.current) return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-
     attemptedRef.current = true;
 
     const setup = async () => {
       try {
-        // 1. Obtener la clave pública VAPID del servidor
         const { data: keyRes } = await api.get<{ success: boolean; data: { publicKey: string } }>('/push/vapid-public-key');
         const publicKey = keyRes.data.publicKey;
         if (!publicKey) return;
 
-        // 2. Registrar el service worker
         const registration = await navigator.serviceWorker.register(SW_URL, { scope: '/' });
         await navigator.serviceWorker.ready;
 
-        // 3. Pedir permiso de notificaciones
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
 
-        // 4. Suscribirse al push
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         });
 
-        // 5. Enviar suscripción al backend
         await api.post('/push/subscribe', subscription.toJSON());
       } catch (err) {
         console.warn('[Push] No se pudo suscribir:', err);
@@ -49,4 +58,17 @@ export function usePushNotifications(enabled: boolean) {
 
     setup();
   }, [enabled]);
+}
+
+// Actualiza el badge del ícono de la app con el número de items pendientes
+export function actualizarBadge(count: number) {
+  if ('setAppBadge' in navigator) {
+    if (count > 0) {
+      (navigator as Navigator & { setAppBadge: (n: number) => Promise<void> })
+        .setAppBadge(count).catch(() => {});
+    } else {
+      (navigator as Navigator & { clearAppBadge: () => Promise<void> })
+        .clearAppBadge?.().catch(() => {});
+    }
+  }
 }

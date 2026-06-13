@@ -5,6 +5,7 @@ import { getClientes } from '@/api/clientes';
 import { useAuthStore } from '@/store/authStore';
 import { useSocketStore } from '@/store/socketStore';
 import { toast } from '@/components/shared/Toast';
+import { actualizarBadge } from '@/hooks/usePushNotifications';
 import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
 import type { Servicio } from '@/types';
 import {
@@ -32,6 +33,10 @@ export const AgendaTecnico = () => {
         fecha: format(new Date(), 'yyyy-MM-dd'),
       });
       setServicios(res.data);
+      const pending = (res.data as Servicio[]).filter(s =>
+        ['asignado', 'en_camino', 'en_servicio'].includes(s.estado)
+      ).length;
+      actualizarBadge(pending);
     } catch {
       toast.error('Error cargando agenda');
     }
