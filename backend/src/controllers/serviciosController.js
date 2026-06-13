@@ -294,10 +294,12 @@ const actualizar = async (req, res, next) => {
 
     const data = {};
     if (esAdmin) {
+      const { tipo_servicio } = req.body;
       Object.assign(data, {
         descripcion_falla, fecha_programada: fecha_programada ? new Date(fecha_programada) : undefined,
         hora_inicio, hora_fin, direccion_servicio, valor_estimado,
         valor_final, metodo_pago, notas_admin, notas_tecnico,
+        ...(tipo_servicio !== undefined && { tipo_servicio }),
       });
     } else {
       const { falla_confirmada, diagnostico_final, repuestos } = req.body;
