@@ -21,6 +21,7 @@ async function main() {
   await prisma.cliente.deleteMany();
   await prisma.usuario.deleteMany();
   await prisma.configuracion.deleteMany();
+  await prisma.configuracionSLA.deleteMany();
 
   const hashedAdminPin = await bcrypt.hash('1234', 10);
   const hashedTecnicoPin = await bcrypt.hash('5678', 10);
