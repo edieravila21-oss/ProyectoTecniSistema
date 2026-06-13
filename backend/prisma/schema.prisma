@@ -197,6 +197,7 @@ model Servicio {
   fecha_programada    DateTime?
   hora_inicio         String?
   hora_fin            String?
+  fecha_en_camino     DateTime?
   fecha_inicio_real   DateTime?
   fecha_fin_real      DateTime?
   direccion_servicio  String?
@@ -386,4 +387,17 @@ model Configuracion {
   updatedAt             DateTime @updatedAt
 
   @@map("configuracion")
+}
+
+model ConfiguracionSLA {
+  id                    String       @id @default(uuid())
+  tipo_servicio         TipoServicio @unique
+  max_tiempo_camino_min Int          @default(15)
+  max_tiempo_ejecucion_min Int       @default(60)
+  descripcion           String?
+  activo                Boolean      @default(true)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@map("configuracion_sla")
 }

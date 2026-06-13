@@ -176,4 +176,60 @@ const verificarEmail = async (req, res, next) => {
   }
 };
 
-module.exports = { login, me, refresh, forgotPassword, resetPassword, cambiarPin, verificarEmail };
+// Login para técnicos: solo PIN, sin correo
+// Compara el PIN contra todos los técnicos activos hasta encontrar coincidencia única
+const loginConPin = async (req, res, next) => {
+  try {
+    const { pin } = req.body;
+    if (!pin) {
+      return res.status(400).json({ success: false, error: 'PIN es requerido', code: 'VALIDATION_ERROR' });
+    }
+
+    const pinStr = String(pin).trim();
+    if (!/^\d{4,6}$/.test(pinStr)) {
+      return res.status(400).json({ success: false, error: 'El PIN debe ser un código de 4 a 6 dígitos', code: 'VALIDATION_ERROR' });
+    }
+
+    const tecnicos = await prisma.usuario.findMany({
+      where: { rol: 'tecnico', activo: true },
+    });
+
+    let coincidencia = null;
+    for (const t of tecnicos) {
+      const valido = await bcrypt.compare(pinStr, t.password);
+      if (valido) {
+        coincidencia = t;
+        break;
+      }
+    }
+
+    if (!coincidencia) {
+      return res.status(401).json({ success: false, error: 'PIN incorrecto', code: 'INVALID_CREDENTIALS' });
+    }
+
+    const token = jwt.sign(
+      { id: coincidencia.id, nombre: coincidencia.nombre, rol: coincidencia.rol },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        usuario: {
+          id: coincidencia.id,
+          nombre: coincidencia.nombre,
+          email: coincidencia.email,
+          rol: coincidencia.rol,
+          foto_url: coincidencia.foto_url,
+          especialidad: coincidencia.especialidad,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { login, loginConPin, me, refresh, forgotPassword, resetPassword, cambiarPin, verificarEmail };

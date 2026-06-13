@@ -4,6 +4,71 @@ const { uploadToCloudinary, uploadBase64ToCloudinary } = require('../config/clou
 const { getChecklistPorTipo } = require('../services/checklistService');
 const { validarTransicion, paginar, respuestaPaginada } = require('../utils/helpers');
 
+// Verifica si dos rangos horarios "HH:MM" se superponen
+function horasSuperpuestas(ini1, fin1, ini2, fin2) {
+  return ini1 < fin2 && fin1 > ini2;
+}
+
+// Dado hora_inicio "HH:MM" y tipo_servicio, calcula hora_fin usando SLA
+async function calcularHoraFin(horaInicio, tipoServicio) {
+  if (!horaInicio || !tipoServicio) return null;
+  const sla = await prisma.configuracionSLA.findUnique({ where: { tipo_servicio: tipoServicio } });
+  if (!sla) return null;
+  const [h, m] = horaInicio.split(':').map(Number);
+  const total = h * 60 + m + sla.max_tiempo_ejecucion_min;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// Verifica que el técnico esté disponible en fecha/hora, cruzando servicios + EventoCalendario + horario laboral
+async function verificarDisponibilidadTecnico(tecnicoId, fecha, horaInicio, horaFin, excludeServicioId = null) {
+  const config = await prisma.configuracion.findFirst();
+  const workStart = config?.hora_inicio || '07:00';
+  const workEnd = config?.hora_fin || '20:00';
+
+  if (horaInicio < workStart || horaFin > workEnd) {
+    return { disponible: false, motivo: `Fuera del horario laboral (${workStart} - ${workEnd})`, code: 'FUERA_HORARIO' };
+  }
+
+  const fechaObj = new Date(fecha);
+  const startOfDay = new Date(fechaObj); startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(fechaObj); endOfDay.setHours(23, 59, 59, 999);
+
+  const [eventos, serviciosExistentes] = await Promise.all([
+    prisma.eventoCalendario.findMany({ where: { tecnicoId, fecha: { gte: startOfDay, lte: endOfDay } } }),
+    prisma.servicio.findMany({
+      where: {
+        tecnicoId,
+        fecha_programada: { gte: startOfDay, lte: endOfDay },
+        estado: { notIn: ['cancelado', 'completado'] },
+        ...(excludeServicioId ? { id: { not: excludeServicioId } } : {}),
+      },
+      select: { id: true, hora_inicio: true, hora_fin: true, descripcion_falla: true },
+    }),
+  ]);
+
+  for (const ev of eventos) {
+    if (ev.todo_el_dia) {
+      return { disponible: false, motivo: `Técnico bloqueado todo el día: ${ev.titulo}`, code: 'BLOQUEO_DIA' };
+    }
+    if (horasSuperpuestas(horaInicio, horaFin, ev.hora_inicio, ev.hora_fin)) {
+      return { disponible: false, motivo: `Conflicto con bloqueo: ${ev.titulo} (${ev.hora_inicio} - ${ev.hora_fin})`, code: 'CONFLICTO_BLOQUEO' };
+    }
+  }
+
+  for (const svc of serviciosExistentes) {
+    if (svc.hora_inicio && svc.hora_fin && horasSuperpuestas(horaInicio, horaFin, svc.hora_inicio, svc.hora_fin)) {
+      return {
+        disponible: false,
+        motivo: `Conflicto con servicio existente (${svc.hora_inicio} - ${svc.hora_fin})`,
+        code: 'CONFLICTO_SERVICIO',
+        conflicto: { id: svc.id, hora_inicio: svc.hora_inicio, hora_fin: svc.hora_fin },
+      };
+    }
+  }
+
+  return { disponible: true };
+}
+
 const listar = async (req, res, next) => {
   try {
     const { fecha, tecnico_id, estado, cliente_id, desde, hasta, origen, page = 1, limit = 20 } = req.query;
@@ -89,6 +154,30 @@ const crear = async (req, res, next) => {
       if (equipo) tipoEquipo = equipo.tipo;
     }
 
+    // Auto-calcular hora_fin si no viene pero hay hora_inicio y tipo_servicio
+    let horaFinFinal = hora_fin;
+    if (hora_inicio && tipo_servicio && !horaFinFinal) {
+      horaFinFinal = await calcularHoraFin(hora_inicio, tipo_servicio);
+    }
+
+    // Validar disponibilidad si se asigna técnico con fecha y hora
+    if (tecnicoId && fecha_programada && hora_inicio && horaFinFinal) {
+      const tecnicoValido = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
+      if (tecnicoValido?.activo && tecnicoValido.rol === 'tecnico') {
+        const disponibilidad = await verificarDisponibilidadTecnico(
+          tecnicoId, fecha_programada, hora_inicio, horaFinFinal
+        );
+        if (!disponibilidad.disponible) {
+          return res.status(409).json({
+            success: false,
+            error: disponibilidad.motivo,
+            code: disponibilidad.code,
+            ...(disponibilidad.conflicto ? { conflicto: disponibilidad.conflicto } : {}),
+          });
+        }
+      }
+    }
+
     const checklistItems = getChecklistPorTipo(tipoEquipo, tipo_servicio);
 
     const servicio = await prisma.servicio.create({
@@ -101,7 +190,7 @@ const crear = async (req, res, next) => {
         descripcion_falla,
         fecha_programada: fecha_programada ? new Date(fecha_programada) : null,
         hora_inicio,
-        hora_fin,
+        hora_fin: horaFinFinal,
         direccion_servicio,
         valor_estimado,
         notas_admin,
@@ -265,6 +354,7 @@ const cambiarEstado = async (req, res, next) => {
     }
 
     const updateData = { estado };
+    if (estado === 'en_camino') updateData.fecha_en_camino = new Date();
     if (estado === 'en_servicio') updateData.fecha_inicio_real = new Date();
     if (estado === 'completado') updateData.fecha_fin_real = new Date();
 
@@ -325,12 +415,14 @@ const cambiarEstado = async (req, res, next) => {
             try {
               await enviarMensaje(tel, resumen);
 
-              // Enviar fotos antes/después
+              // Enviar todas las fotos: antes → durante → después
               const fotos = actualizado.fotos || [];
-              const fotoAntes = fotos.find(f => f.tipo === 'antes');
-              const fotoDespues = fotos.find(f => f.tipo === 'despues');
-              if (fotoAntes) await enviarImagen(tel, fotoAntes.url, '📷 Antes del servicio');
-              if (fotoDespues) await enviarImagen(tel, fotoDespues.url, '📷 Después del servicio');
+              const fotosAntes = fotos.filter(f => f.tipo === 'antes');
+              const fotosDurante = fotos.filter(f => f.tipo === 'durante');
+              const fotosDespues = fotos.filter(f => f.tipo === 'despues');
+              for (const f of fotosAntes) await enviarImagen(tel, f.url, '📷 Antes del servicio');
+              for (const f of fotosDurante) await enviarImagen(tel, f.url, '📷 Durante el servicio');
+              for (const f of fotosDespues) await enviarImagen(tel, f.url, '📷 Después del servicio');
 
               // Encuesta de calificación
               await enviarEncuestaCalificacion(tel, actualizado.id);
@@ -392,9 +484,42 @@ const asignarTecnico = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Técnico no válido', code: 'INVALID_TECNICO' });
     }
 
+    const servicioActual = await prisma.servicio.findUnique({ where: { id: req.params.id } });
+    if (!servicioActual) {
+      return res.status(404).json({ success: false, error: 'Servicio no encontrado', code: 'NOT_FOUND' });
+    }
+
+    // Auto-calcular hora_fin si hay hora_inicio y tipo_servicio pero no hay hora_fin
+    let horaFinFinal = servicioActual.hora_fin;
+    if (servicioActual.hora_inicio && servicioActual.tipo_servicio && !horaFinFinal) {
+      horaFinFinal = await calcularHoraFin(servicioActual.hora_inicio, servicioActual.tipo_servicio);
+    }
+
+    // Validar disponibilidad del técnico si hay fecha y horario
+    if (servicioActual.fecha_programada && servicioActual.hora_inicio && horaFinFinal) {
+      const disponibilidad = await verificarDisponibilidadTecnico(
+        tecnico_id,
+        servicioActual.fecha_programada,
+        servicioActual.hora_inicio,
+        horaFinFinal,
+        servicioActual.id
+      );
+      if (!disponibilidad.disponible) {
+        return res.status(409).json({
+          success: false,
+          error: disponibilidad.motivo,
+          code: disponibilidad.code,
+          ...(disponibilidad.conflicto ? { conflicto: disponibilidad.conflicto } : {}),
+        });
+      }
+    }
+
+    const updateData = { tecnicoId: tecnico_id, estado: 'asignado' };
+    if (horaFinFinal && !servicioActual.hora_fin) updateData.hora_fin = horaFinFinal;
+
     const servicio = await prisma.servicio.update({
       where: { id: req.params.id },
-      data: { tecnicoId: tecnico_id, estado: 'asignado' },
+      data: updateData,
       include: {
         cliente: true,
         tecnico: { select: { id: true, nombre: true } },
@@ -472,16 +597,27 @@ const marcarChecklist = async (req, res, next) => {
   }
 };
 
+const LIMITE_FOTOS_POR_TIPO = { antes: 3, durante: 4, despues: 3 };
+
 const subirFoto = async (req, res, next) => {
   try {
     const { tipo } = req.body;
+    const tipoFoto = tipo || 'durante';
+
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No se envió ninguna foto', code: 'NO_FILE' });
     }
 
-    const fotosExistentes = await prisma.fotoServicio.count({ where: { servicioId: req.params.id } });
-    if (fotosExistentes >= 4) {
-      return res.status(400).json({ success: false, error: 'Máximo 4 fotos por servicio', code: 'MAX_FOTOS' });
+    const limite = LIMITE_FOTOS_POR_TIPO[tipoFoto] ?? 2;
+    const fotosPorTipo = await prisma.fotoServicio.count({
+      where: { servicioId: req.params.id, tipo: tipoFoto },
+    });
+    if (fotosPorTipo >= limite) {
+      return res.status(400).json({
+        success: false,
+        error: `Máximo ${limite} fotos de tipo "${tipoFoto}" por servicio`,
+        code: 'MAX_FOTOS',
+      });
     }
 
     const result = await uploadToCloudinary(req.file.buffer, `techserv/servicios/${req.params.id}`);
@@ -490,7 +626,7 @@ const subirFoto = async (req, res, next) => {
       data: {
         servicioId: req.params.id,
         url: result.secure_url,
-        tipo: tipo || 'durante',
+        tipo: tipoFoto,
       },
     });
 
@@ -498,7 +634,7 @@ const subirFoto = async (req, res, next) => {
       data: {
         servicioId: req.params.id,
         tipo: 'foto_subida',
-        descripcion: `Foto "${tipo || 'durante'}" subida`,
+        descripcion: `Foto "${tipoFoto}" subida`,
         usuarioId: req.usuario.id,
       },
     });

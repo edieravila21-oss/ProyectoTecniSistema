@@ -137,4 +137,100 @@ const eliminar = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, crear, actualizar, eliminar };
+// GET /api/calendario/disponibilidad?tecnico_id=X&fecha=YYYY-MM-DD&tipo_servicio=Z
+// Retorna slots disponibles del día para el técnico, respetando horario laboral,
+// servicios ya asignados y bloqueos de EventoCalendario.
+const disponibilidad = async (req, res, next) => {
+  try {
+    const { tecnico_id, fecha, tipo_servicio } = req.query;
+
+    if (!tecnico_id || !fecha) {
+      return res.status(400).json({ success: false, error: 'tecnico_id y fecha son requeridos' });
+    }
+
+    const [config, slaConfig] = await Promise.all([
+      prisma.configuracion.findFirst(),
+      tipo_servicio
+        ? prisma.configuracionSLA.findUnique({ where: { tipo_servicio } })
+        : Promise.resolve(null),
+    ]);
+
+    const workStart = config?.hora_inicio || '07:00';
+    const workEnd = config?.hora_fin || '20:00';
+    const duracion = slaConfig?.max_tiempo_ejecucion_min || 60;
+
+    const fechaObj = new Date(fecha);
+    const startOfDay = new Date(fechaObj); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(fechaObj); endOfDay.setHours(23, 59, 59, 999);
+
+    const [eventos, servicios] = await Promise.all([
+      prisma.eventoCalendario.findMany({
+        where: { tecnicoId: tecnico_id, fecha: { gte: startOfDay, lte: endOfDay } },
+        select: { titulo: true, hora_inicio: true, hora_fin: true, tipo: true, todo_el_dia: true },
+      }),
+      prisma.servicio.findMany({
+        where: {
+          tecnicoId: tecnico_id,
+          fecha_programada: { gte: startOfDay, lte: endOfDay },
+          estado: { notIn: ['cancelado'] },
+        },
+        select: { id: true, hora_inicio: true, hora_fin: true, tipo_servicio: true, estado: true, descripcion_falla: true },
+      }),
+    ]);
+
+    const todoDia = eventos.some(e => e.todo_el_dia);
+    if (todoDia) {
+      const bloqueo = eventos.find(e => e.todo_el_dia);
+      return res.json({
+        success: true,
+        data: {
+          disponible: false,
+          motivo: `Técnico bloqueado todo el día: ${bloqueo.titulo}`,
+          slots: [],
+          bloqueados: [],
+          duracion_minutos: duracion,
+          horario_laboral: { inicio: workStart, fin: workEnd },
+        },
+      });
+    }
+
+    // Construir lista de intervalos ocupados
+    const ocupados = [
+      ...eventos.map(e => ({ inicio: e.hora_inicio, fin: e.hora_fin, tipo: 'bloqueo', titulo: e.titulo })),
+      ...servicios
+        .filter(s => s.hora_inicio && s.hora_fin)
+        .map(s => ({ inicio: s.hora_inicio, fin: s.hora_fin, tipo: 'servicio', id: s.id, estado: s.estado })),
+    ];
+
+    // Generar slots cada 30 min dentro del horario laboral
+    const [wsh, wsm] = workStart.split(':').map(Number);
+    const [weh, wem] = workEnd.split(':').map(Number);
+    const workStartMin = wsh * 60 + wsm;
+    const workEndMin = weh * 60 + wem;
+
+    const slots = [];
+    for (let start = workStartMin; start + duracion <= workEndMin; start += 30) {
+      const end = start + duracion;
+      const horaInicio = `${String(Math.floor(start / 60)).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}`;
+      const horaFin = `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+      const conflicto = ocupados.find(o => horaInicio < o.fin && horaFin > o.inicio) || null;
+      slots.push({ hora_inicio: horaInicio, hora_fin: horaFin, disponible: !conflicto, conflicto });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        disponible: slots.some(s => s.disponible),
+        slots,
+        ocupados,
+        duracion_minutos: duracion,
+        horario_laboral: { inicio: workStart, fin: workEnd },
+        tipo_servicio: tipo_servicio || null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { listar, crear, actualizar, eliminar, disponibilidad };

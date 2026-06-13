@@ -237,17 +237,73 @@ const sla = async (req, res, next) => {
       whereDate.tecnicoId = tecnicoId;
     }
 
+    // Cargar configuraciones de SLA
+    const configSLA = await prisma.configuracionSLA.findMany();
+    const slaMap = {};
+    configSLA.forEach(config => {
+      slaMap[config.tipo_servicio] = config;
+    });
+
     const completados = await prisma.servicio.findMany({
       where: { ...whereDate, estado: 'completado' },
       select: {
         id: true,
+        tipo_servicio: true,
         fecha_programada: true,
+        fecha_en_camino: true,
         fecha_inicio_real: true,
         fecha_fin_real: true,
         calificacion_cliente: true,
         createdAt: true,
       },
     });
+
+    // SLA 1: Tiempo en camino (desde en_camino hasta inicio real)
+    const tiemposEnCaminoReal = completados
+      .filter(s => s.fecha_en_camino && s.fecha_inicio_real)
+      .map(s => {
+        const tiempoMinutos = (new Date(s.fecha_inicio_real).getTime() - new Date(s.fecha_en_camino).getTime()) / 60000;
+        const maxCamino = slaMap[s.tipo_servicio]?.max_tiempo_camino_min ?? 15;
+        return {
+          servicioId: s.id,
+          tiempoMinutos,
+          tipo_servicio: s.tipo_servicio,
+          max_tiempo_camino_min: maxCamino,
+          cumple_sla: tiempoMinutos <= maxCamino,
+        };
+      });
+    
+    const tiempoEnCaminoPromedio = tiemposEnCaminoReal.length
+      ? tiemposEnCaminoReal.reduce((a, b) => a + b.tiempoMinutos, 0) / tiemposEnCaminoReal.length
+      : 0;
+    
+    const slaEnCaminoCumplido = tiemposEnCaminoReal.length
+      ? (tiemposEnCaminoReal.filter(t => t.cumple_sla).length / tiemposEnCaminoReal.length) * 100
+      : 0;
+
+    // SLA 2: Tiempo de ejecución (desde inicio real hasta fin real)
+    const tiemposEjecucion = completados
+      .filter(s => s.fecha_inicio_real && s.fecha_fin_real)
+      .map(s => {
+        const tiempoMinutos = (new Date(s.fecha_fin_real).getTime() - new Date(s.fecha_inicio_real).getTime()) / 60000;
+        const config = slaMap[s.tipo_servicio];
+        const maxTiempo = config ? config.max_tiempo_ejecucion_min : 120;
+        return {
+          servicioId: s.id,
+          tiempoMinutos,
+          tipo_servicio: s.tipo_servicio,
+          max_tiempo_min: maxTiempo,
+          cumple_sla: tiempoMinutos <= maxTiempo,
+        };
+      });
+    
+    const tiempoEjecucionPromedio = tiemposEjecucion.length
+      ? tiemposEjecucion.reduce((a, b) => a + b.tiempoMinutos, 0) / tiemposEjecucion.length
+      : 0;
+    
+    const slaEjecucionCumplido = tiemposEjecucion.length
+      ? (tiemposEjecucion.filter(t => t.cumple_sla).length / tiemposEjecucion.length) * 100
+      : 0;
 
     // Tiempo promedio de respuesta: creación → inicio real
     const tiemposRespuesta = completados
@@ -351,9 +407,40 @@ const sla = async (req, res, next) => {
     const tasaRetencion = clientesUnicos.length > 0
       ? (clientesRecurrentes.length / clientesUnicos.length) * 100 : 0;
 
+    // Servicios que no cumplen SLAs
+    const serviciosFueraDelSLA = [
+      ...tiemposEnCaminoReal.filter(t => !t.cumple_sla),
+      ...tiemposEjecucion.filter(t => !t.cumple_sla),
+    ].map(s => s.servicioId);
+
     res.json({
       success: true,
       data: {
+        // === NUEVOS SLAs PRINCIPALES ===
+        sla_en_camino: {
+          tiempo_promedio_minutos: Math.round(tiempoEnCaminoPromedio * 10) / 10,
+          max_permitido_minutos: configSLA.length > 0 ? configSLA[0].max_tiempo_camino_min : 15,
+          tasa_cumplimiento: Math.round(slaEnCaminoCumplido * 10) / 10,
+          servicios_evaluados: tiemposEnCaminoReal.length,
+          servicios_dentro_sla: tiemposEnCaminoReal.filter(t => t.cumple_sla).length,
+          detalle_por_tipo: configSLA.map(config => ({
+            tipo_servicio: config.tipo_servicio,
+            max_tiempo_camino_min: config.max_tiempo_camino_min,
+            servicios_de_este_tipo: tiemposEnCaminoReal.filter(t => t.tipo_servicio === config.tipo_servicio).length,
+            dentro_sla: tiemposEnCaminoReal.filter(t => t.tipo_servicio === config.tipo_servicio && t.cumple_sla).length,
+          })),
+        },
+        sla_ejecucion: {
+          tiempo_promedio_minutos: Math.round(tiempoEjecucionPromedio * 10) / 10,
+          tasa_cumplimiento: Math.round(slaEjecucionCumplido * 10) / 10,
+          servicios_evaluados: tiemposEjecucion.length,
+          servicios_dentro_sla: tiemposEjecucion.filter(t => t.cumple_sla).length,
+          detalle_por_tipo: configSLA.map(config => ({
+            tipo_servicio: config.tipo_servicio,
+            max_tiempo_min: config.max_tiempo_ejecucion_min,
+            servicios_de_este_tipo: tiemposEjecucion.filter(t => t.tipo_servicio === config.tipo_servicio).length,
+          })),
+        },
         // Tiempos de ejecución del técnico
         tiempo_respuesta_promedio: Math.round(tiempoRespuestaPromedio),
         tiempo_servicio_promedio: Math.round(tiempoServicioPromedio),
@@ -384,6 +471,8 @@ const sla = async (req, res, next) => {
         tasa_retencion: Math.round(tasaRetencion * 10) / 10,
         // Distribución
         por_dia_semana: porDiaSemana,
+        // Servicios problemáticos
+        servicios_fuera_del_sla: serviciosFueraDelSLA,
       },
     });
   } catch (error) {

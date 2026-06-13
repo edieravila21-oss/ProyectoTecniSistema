@@ -7,6 +7,9 @@ export const verificarEmailApi = (email: string) =>
 export const loginApi = (email: string, pin: string) =>
   api.post<ApiResponse<{ token: string; usuario: Usuario }>>('/auth/login', { email, pin });
 
+export const loginConPinApi = (pin: string) =>
+  api.post<ApiResponse<{ token: string; usuario: Usuario }>>('/auth/login-pin', { pin });
+
 export const getMe = () =>
   api.get<ApiResponse<Usuario>>('/auth/me');
 

@@ -1,9 +1,10 @@
 const router = require('express').Router();
-const { login, me, refresh, forgotPassword, resetPassword, cambiarPin, verificarEmail } = require('../controllers/authController');
+const { login, loginConPin, me, refresh, forgotPassword, resetPassword, cambiarPin, verificarEmail } = require('../controllers/authController');
 const { verifyToken } = require('../middlewares/auth');
 
 router.post('/verificar-email', verificarEmail);
 router.post('/login', login);
+router.post('/login-pin', loginConPin);
 router.get('/me', verifyToken, me);
 router.post('/refresh', verifyToken, refresh);
 router.post('/forgot-password', forgotPassword);
