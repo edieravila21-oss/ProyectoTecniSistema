@@ -43,6 +43,7 @@ app.use('/api/whatsapp', require('./src/routes/whatsapp'));
 app.use('/api/evaluaciones', require('./src/routes/evaluaciones'));
 app.use('/api/configuracion', require('./src/routes/configuracion'));
 app.use('/api/calendario', require('./src/routes/calendario'));
+app.use('/api/push', require('./src/routes/push'));
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date() } });

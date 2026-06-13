@@ -131,6 +131,7 @@ model Usuario {
   evaluaciones      Evaluacion[]
   eventosCalendario     EventoCalendario[] @relation("EventosTecnico")
   eventosCalendarioCreados EventoCalendario[] @relation("EventosCreadosPor")
+  pushSubscriptions PushSubscription[]
 
   @@map("usuarios")
 }
@@ -350,6 +351,19 @@ model EventoCalendario {
   creadoPor   Usuario?    @relation("EventosCreadosPor", fields: [creadoPorId], references: [id])
 
   @@map("eventos_calendario")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  usuarioId String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
 }
 
 model Metrica {

@@ -467,6 +467,21 @@ const cambiarEstado = async (req, res, next) => {
       }
     }
 
+    // Push notification al admin cuando el técnico completa
+    if (estado === 'completado') {
+      try {
+        const { enviarPushARoles } = require('../services/pushService');
+        const clienteNombre = actualizado.cliente?.nombre || 'Cliente';
+        const tecnicoNombre = actualizado.tecnico?.nombre || 'Técnico';
+        await enviarPushARoles(
+          ['admin'],
+          '✅ Servicio completado',
+          `${tecnicoNombre} completó el servicio de ${clienteNombre}`,
+          { url: `/admin/servicios?id=${actualizado.id}` }
+        );
+      } catch (err) { console.error('[Push] Error notificando admin:', err.message); }
+    }
+
     // Auto-create maintenance reminder when service completes
     if (estado === 'completado' && actualizado.equipoId) {
       try {
@@ -577,6 +592,18 @@ const asignarTecnico = async (req, res, next) => {
       const msg = `🔧 *RefriElectri Pro — Nuevo Servicio Asignado*\n\n👤 Cliente: *${cliente}*\n🏠 Dirección: ${servicio.direccion_servicio || 'Por definir'}\n📅 Fecha: ${fecha}\n🕐 Hora: ${hora}\n🔌 Equipo: ${equipo}\n⚠️ Falla: ${servicio.descripcion_falla || 'No especificada'}\n\nRevisa tu app para más detalles.`;
       try { await enviarMensaje(tecnico.telefono, msg); } catch (err) { console.error('[WhatsApp] Error notificando técnico:', err.message); }
     }
+
+    // Push notification al técnico
+    try {
+      const { enviarPush } = require('../services/pushService');
+      const fechaStr = servicio.fecha_programada ? new Date(servicio.fecha_programada).toLocaleDateString('es-CO') : 'Por definir';
+      await enviarPush(
+        tecnico_id,
+        '🔧 Nuevo servicio asignado',
+        `${servicio.cliente?.nombre || 'Cliente'} — ${servicio.direccion_servicio || 'Sin dirección'} · ${fechaStr} ${servicio.hora_inicio || ''}`.trim(),
+        { url: `/tecnico/servicio/${servicio.id}` }
+      );
+    } catch (err) { console.error('[Push] Error notificando técnico:', err.message); }
 
     try { getIO().to('admin').emit('servicio_actualizado', servicio); } catch (_) {}
 

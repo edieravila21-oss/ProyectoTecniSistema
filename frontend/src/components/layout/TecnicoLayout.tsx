@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { getClientes, getHistorialCliente } from '@/api/clientes';
 import { formatCurrency, tipoEquipoLabel } from '@/utils/helpers';
 import {
@@ -39,6 +40,7 @@ type View = 'search' | 'historial' | 'servicio-detalle';
 
 export const TecnicoLayout = () => {
   const { usuario } = useAuthStore();
+  usePushNotifications(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [view, setView] = useState<View>('search');
   const [query, setQuery] = useState('');

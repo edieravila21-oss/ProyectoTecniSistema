@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useSocketStore } from '@/store/socketStore';
 import { useNotificacionesStore } from '@/store/notificacionesStore';
 import {
@@ -25,6 +26,7 @@ const navItems = [
 export const AdminLayout = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { usuario, logout } = useAuthStore();
+  usePushNotifications(true);
   const { whatsappConectado } = useSocketStore();
   const { mensajesNuevos } = useNotificacionesStore();
   const navigate = useNavigate();
