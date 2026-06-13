@@ -76,6 +76,11 @@ export interface Servicio {
   repuestos?: { nombre: string; cantidad: number; precio_unitario: number }[];
   origen: OrigenServicio;
   createdAt: string;
+  sla_ejecucion?: {
+    max_min: number;
+    real_min: number | null;
+    excedido: boolean | null;
+  };
   cliente?: Cliente;
   tecnico?: Pick<Usuario, 'id' | 'nombre' | 'foto_url'>;
   equipo?: Equipo;

@@ -19,6 +19,21 @@ async function calcularHoraFin(horaInicio, tipoServicio) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+// Calcula métricas SLA de ejecución para un servicio dado su config SLA
+function calcularSLAEjecucion(servicio, slaConfig) {
+  if (!slaConfig || !servicio.tipo_servicio) return null;
+  const max_min = slaConfig.max_tiempo_ejecucion_min;
+  let real_min = null;
+  let excedido = null;
+  if (servicio.fecha_inicio_real && servicio.fecha_fin_real) {
+    real_min = Math.round(
+      (new Date(servicio.fecha_fin_real) - new Date(servicio.fecha_inicio_real)) / 60000
+    );
+    excedido = real_min > max_min;
+  }
+  return { max_min, real_min, excedido };
+}
+
 // Verifica que el técnico esté disponible en fecha/hora, cruzando servicios + EventoCalendario + horario laboral
 async function verificarDisponibilidadTecnico(tecnicoId, fecha, horaInicio, horaFin, excludeServicioId = null) {
   const config = await prisma.configuracion.findFirst();
@@ -89,7 +104,7 @@ const listar = async (req, res, next) => {
       where.fecha_programada = { gte: new Date(desde), lte: new Date(hasta) };
     }
 
-    const [servicios, total] = await Promise.all([
+    const [servicios, total, slaConfigs] = await Promise.all([
       prisma.servicio.findMany({
         where,
         include: {
@@ -101,9 +116,16 @@ const listar = async (req, res, next) => {
         ...paginar(page, limit),
       }),
       prisma.servicio.count({ where }),
+      prisma.configuracionSLA.findMany(),
     ]);
 
-    res.json({ success: true, ...respuestaPaginada(servicios, total, page, limit) });
+    const slaMap = Object.fromEntries(slaConfigs.map(s => [s.tipo_servicio, s]));
+    const serviciosConSLA = servicios.map(s => ({
+      ...s,
+      sla_ejecucion: calcularSLAEjecucion(s, slaMap[s.tipo_servicio]),
+    }));
+
+    res.json({ success: true, ...respuestaPaginada(serviciosConSLA, total, page, limit) });
   } catch (error) {
     next(error);
   }
@@ -131,7 +153,13 @@ const obtener = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Servicio no encontrado', code: 'NOT_FOUND' });
     }
 
-    res.json({ success: true, data: servicio });
+    let sla_ejecucion = null;
+    if (servicio.tipo_servicio) {
+      const slaConfig = await prisma.configuracionSLA.findUnique({ where: { tipo_servicio: servicio.tipo_servicio } });
+      sla_ejecucion = calcularSLAEjecucion(servicio, slaConfig);
+    }
+
+    res.json({ success: true, data: { ...servicio, sla_ejecucion } });
   } catch (error) {
     next(error);
   }

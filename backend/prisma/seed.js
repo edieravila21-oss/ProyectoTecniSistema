@@ -139,7 +139,8 @@ async function main() {
         notas_admin: i % 3 === 0 ? 'Cliente frecuente, dar prioridad' : null,
         notas_tecnico: estado === 'completado' ? 'Servicio realizado sin novedad' : null,
         origen: i % 4 === 0 ? 'whatsapp' : 'manual',
-        fecha_inicio_real: ['en_servicio', 'completado'].includes(estado) ? fechaProg : null,
+        fecha_en_camino: ['en_camino', 'en_servicio', 'completado'].includes(estado) ? fechaProg : null,
+        fecha_inicio_real: ['en_servicio', 'completado'].includes(estado) ? new Date(fechaProg.getTime() + 900000) : null,
         fecha_fin_real: estado === 'completado' ? new Date(fechaProg.getTime() + 2 * 3600000) : null,
         checklist: {
           create: checklist.map((item, idx) => ({
@@ -154,7 +155,7 @@ async function main() {
             ...(estado !== 'pendiente' ? [{ tipo: 'asignado', descripcion: `Asignado a ${tecnico.nombre}`, usuarioId: admin.id, createdAt: new Date(fechaProg.getTime() - 43200000) }] : []),
             ...(estado === 'completado' ? [
               { tipo: 'en_camino', descripcion: 'Técnico en camino', usuarioId: tecnico.id, createdAt: fechaProg },
-              { tipo: 'en_servicio', descripcion: 'Servicio iniciado', usuarioId: tecnico.id, createdAt: new Date(fechaProg.getTime() + 1800000) },
+              { tipo: 'en_servicio', descripcion: 'Servicio iniciado', usuarioId: tecnico.id, createdAt: new Date(fechaProg.getTime() + 900000) },
               { tipo: 'completado', descripcion: 'Servicio completado', usuarioId: tecnico.id, createdAt: new Date(fechaProg.getTime() + 7200000) },
             ] : []),
           ],
@@ -174,6 +175,36 @@ async function main() {
       mensaje_bienvenida: 'Bienvenido a TechServ Pro, servicio técnico especializado en aires y neveras.',
       meses_recordatorio: 6,
     },
+  });
+
+  // Configuración de SLAs por tipo de servicio
+  await prisma.configuracionSLA.createMany({
+    data: [
+      {
+        tipo_servicio: 'diagnostico',
+        max_tiempo_camino_min: 15,
+        max_tiempo_ejecucion_min: 30,
+        descripcion: 'Diagnóstico rápido del equipo',
+      },
+      {
+        tipo_servicio: 'mantenimiento',
+        max_tiempo_camino_min: 15,
+        max_tiempo_ejecucion_min: 45,
+        descripcion: 'Mantenimiento preventivo y limpieza',
+      },
+      {
+        tipo_servicio: 'reparacion',
+        max_tiempo_camino_min: 15,
+        max_tiempo_ejecucion_min: 120,
+        descripcion: 'Reparación de componentes',
+      },
+      {
+        tipo_servicio: 'instalacion',
+        max_tiempo_camino_min: 15,
+        max_tiempo_ejecucion_min: 180,
+        descripcion: 'Instalación de nuevo equipo',
+      },
+    ],
   });
 
   const metricasData = [];

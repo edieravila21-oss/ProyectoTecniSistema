@@ -13,7 +13,7 @@ import { formatDate, formatCurrency, formatRelative, tipoEquipoLabel } from '@/u
 import type { Servicio, Usuario, ChecklistItem, EventoServicio } from '@/types';
 import {
   Search, X, ChevronDown, ChevronUp,
-  CheckCircle, Trash2,
+  CheckCircle, Trash2, AlertTriangle, Clock,
 } from 'lucide-react';
 
 export const Servicios = () => {
@@ -160,7 +160,16 @@ export const Servicios = () => {
                       <td className="py-3.5 px-4 font-medium text-slate-700">{s.cliente?.nombre || 'N/A'}</td>
                       <td className="py-3.5 px-4 text-slate-500 hidden md:table-cell">{s.equipo ? tipoEquipoLabel[s.equipo.tipo] : '--'}</td>
                       <td className="py-3.5 px-4 hidden sm:table-cell">{s.tecnico?.nombre || <span className="text-amber-500 text-xs font-medium">Sin asignar</span>}</td>
-                      <td className="py-3.5 px-4 text-center"><EstadoBadge estado={s.estado} /></td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <EstadoBadge estado={s.estado} />
+                          {s.sla_ejecucion?.excedido && (
+                            <span title={`Excedió SLA: ${s.sla_ejecucion.real_min} min (máx. ${s.sla_ejecucion.max_min} min)`} className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-red-100 text-red-500 shrink-0">
+                              <AlertTriangle className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3.5 px-4 text-right font-medium text-slate-700 hidden lg:table-cell">{s.valor_final ? formatCurrency(s.valor_final) : s.valor_estimado ? formatCurrency(s.valor_estimado) : '--'}</td>
                     </tr>
                   ))}
@@ -221,6 +230,57 @@ export const Servicios = () => {
                         <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Dirección</p><p className="font-semibold text-slate-700">{selected.direccion_servicio || '--'}</p></div>
                         <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Falla reportada</p><p className="text-slate-600">{selected.descripcion_falla || '--'}</p></div>
                       </div>
+                      {/* Panel SLA ejecución — solo admin, no visible al técnico */}
+                      {selected.sla_ejecucion && (
+                        <div className={`rounded-xl p-4 border ${
+                          selected.sla_ejecucion.excedido === true
+                            ? 'bg-red-50 border-red-200'
+                            : selected.sla_ejecucion.excedido === false
+                              ? 'bg-emerald-50 border-emerald-200'
+                              : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          <div className="flex items-center gap-2 mb-3">
+                            {selected.sla_ejecucion.excedido === true
+                              ? <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                              : selected.sla_ejecucion.excedido === false
+                                ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                                : <Clock className="h-4 w-4 text-slate-400 shrink-0" />
+                            }
+                            <span className={`text-sm font-semibold ${
+                              selected.sla_ejecucion.excedido === true
+                                ? 'text-red-700'
+                                : selected.sla_ejecucion.excedido === false
+                                  ? 'text-emerald-700'
+                                  : 'text-slate-700'
+                            }`}>
+                              {selected.sla_ejecucion.excedido === true
+                                ? 'Excedió el tiempo SLA'
+                                : selected.sla_ejecucion.excedido === false
+                                  ? 'Dentro del tiempo SLA'
+                                  : 'Tiempo estimado de ejecución'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="text-[11px] text-slate-500 font-medium">Tiempo esperado</p>
+                              <p className="font-semibold text-slate-700 mt-0.5">{selected.sla_ejecucion.max_min} min</p>
+                            </div>
+                            {selected.sla_ejecucion.real_min !== null && (
+                              <div>
+                                <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
+                                <p className={`font-semibold mt-0.5 ${selected.sla_ejecucion.excedido ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  {selected.sla_ejecucion.real_min} min
+                                  {selected.sla_ejecucion.excedido && (
+                                    <span className="text-[11px] text-red-400 font-normal ml-1">
+                                      (+{selected.sla_ejecucion.real_min - selected.sla_ejecucion.max_min} min)
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div>
                         <p className="text-[11px] text-slate-400 font-medium mb-1.5">Técnico asignado</p>
                         <Select value={selected.tecnicoId || ''} onChange={e => e.target.value && handleAsignar(selected.id, e.target.value)} className="rounded-xl">
