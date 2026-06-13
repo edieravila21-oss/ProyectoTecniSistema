@@ -283,10 +283,16 @@ export const Servicios = () => {
                       )}
                       <div>
                         <p className="text-[11px] text-slate-400 font-medium mb-1.5">Técnico asignado</p>
-                        <Select value={selected.tecnicoId || ''} onChange={e => e.target.value && handleAsignar(selected.id, e.target.value)} className="rounded-xl">
-                          <option value="">Seleccionar técnico</option>
-                          {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                        </Select>
+                        {selected.estado === 'completado' || selected.estado === 'cancelado' ? (
+                          <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700">
+                            {selected.tecnico?.nombre || <span className="text-slate-400 font-normal">Sin asignar</span>}
+                          </div>
+                        ) : (
+                          <Select value={selected.tecnicoId || ''} onChange={e => e.target.value && handleAsignar(selected.id, e.target.value)} className="rounded-xl">
+                            <option value="">Seleccionar técnico</option>
+                            {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                          </Select>
+                        )}
                       </div>
                     </div>
                   )}
