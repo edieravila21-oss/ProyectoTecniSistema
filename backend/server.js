@@ -14,10 +14,15 @@ const server = http.createServer(app);
 initSocket(server);
 
 app.use(helmet());
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? (process.env.FRONTEND_URL || '').split(',').map(o => o.trim()).filter(Boolean)
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL
-    : ['http://localhost:5173', 'http://localhost:3000'],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origen no permitido → ${origin}`));
+  },
   credentials: true,
 }));
 app.use(morgan('dev'));
@@ -33,6 +38,7 @@ app.use('/api/usuarios', require('./src/routes/usuarios'));
 app.use('/api/clientes', require('./src/routes/clientes'));
 app.use('/api/servicios', require('./src/routes/servicios'));
 app.use('/api/metricas', require('./src/routes/metricas'));
+app.use('/api/sla-config', require('./src/routes/sla'));
 app.use('/api/whatsapp', require('./src/routes/whatsapp'));
 app.use('/api/evaluaciones', require('./src/routes/evaluaciones'));
 app.use('/api/configuracion', require('./src/routes/configuracion'));
