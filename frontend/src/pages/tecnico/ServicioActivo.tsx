@@ -620,7 +620,7 @@ export const ServicioActivo = () => {
                 return itemsPorCat('llegada').map(item => {
                   const desc = item.descripcion.toLowerCase();
                   const isFotoItem = desc.includes('foto');
-                  const isEquipoItem = desc.includes('modelo') || desc.includes('serial') || desc.includes('btu');
+                  const isEquipoItem = desc.includes('modelo') || desc.includes('serial') || desc.includes('btu') || desc.includes('verificar datos') || desc.includes('datos del equipo') || desc.includes('confirmar datos');
 
                   // Items 2 y 3 bloqueados hasta que exista foto 'antes'
                   const bloqueadoSinFoto = !isFotoItem && !tieneFotoAntes && !item.completado;
@@ -733,11 +733,15 @@ export const ServicioActivo = () => {
                               className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
                               onClick={async () => {
                                 if (!id) return;
-                                const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra : correccionData.marca;
+                                const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra.trim() : correccionData.marca;
+                                if (!marca) {
+                                  toast.error('Selecciona la marca del equipo');
+                                  return;
+                                }
                                 const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
                                 try {
                                   await corregirEquipo(id, {
-                                    marca: marca || undefined,
+                                    marca,
                                     capacidad: capacidad || undefined,
                                   });
                                   toast.success('Datos del equipo confirmados');
