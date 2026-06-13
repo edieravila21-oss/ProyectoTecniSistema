@@ -321,13 +321,13 @@ const sla = async (req, res, next) => {
       ? tiemposServicio.reduce((a, b) => a + b, 0) / tiemposServicio.length
       : 0;
 
-    // Tiempo promedio en camino: fecha_programada → fecha_inicio_real
-    const tiemposEnCamino = completados
+    // Tiempo promedio desde programada → inicio real
+    const tiemposDesdeProgUntilInicio = completados
       .filter(s => s.fecha_inicio_real && s.fecha_programada)
       .map(s => (new Date(s.fecha_inicio_real).getTime() - new Date(s.fecha_programada).getTime()) / 60000)
       .filter(t => t >= 0 && t < 24 * 60);
-    const tiempoEnCaminoPromedio = tiemposEnCamino.length
-      ? tiemposEnCamino.reduce((a, b) => a + b, 0) / tiemposEnCamino.length
+    const tiempoDesdeProgPromedioMin = tiemposDesdeProgUntilInicio.length
+      ? tiemposDesdeProgUntilInicio.reduce((a, b) => a + b, 0) / tiemposDesdeProgUntilInicio.length
       : 0;
 
     // Tasa de completados vs total
@@ -444,7 +444,7 @@ const sla = async (req, res, next) => {
         // Tiempos de ejecución del técnico
         tiempo_respuesta_promedio: Math.round(tiempoRespuestaPromedio),
         tiempo_servicio_promedio: Math.round(tiempoServicioPromedio),
-        tiempo_en_camino_promedio: Math.round(tiempoEnCaminoPromedio),
+        tiempo_en_camino_promedio: Math.round(tiempoDesdeProgPromedioMin),
         // Tasas de calidad
         tasa_completado: Math.round(tasaCompletado * 10) / 10,
         tasa_cancelacion: totalServicios > 0 ? Math.round((totalCancelados / totalServicios) * 1000) / 10 : 0,
