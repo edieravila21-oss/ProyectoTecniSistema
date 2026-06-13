@@ -225,62 +225,78 @@ export const Servicios = () => {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Cliente</p><p className="font-semibold text-slate-700">{selected.cliente?.nombre}</p></div>
                         <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Teléfono</p><p className="font-semibold text-slate-700">{selected.cliente?.telefono}</p></div>
-                        <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Equipo</p><p className="font-semibold text-slate-700">{selected.equipo ? `${tipoEquipoLabel[selected.equipo.tipo]} ${selected.equipo.marca || ''}` : '--'}</p></div>
+                        <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Tipo de servicio</p><p className="font-semibold text-slate-700 capitalize">{selected.tipo_servicio || <span className="text-slate-400 font-normal">Sin asignar</span>}</p></div>
                         <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Fecha</p><p className="font-semibold text-slate-700">{selected.fecha_programada ? formatDate(selected.fecha_programada) : '--'}</p></div>
+                        <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Equipo</p><p className="font-semibold text-slate-700">{selected.equipo ? `${tipoEquipoLabel[selected.equipo.tipo]} ${selected.equipo.marca || ''}` : '--'}</p></div>
                         <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Dirección</p><p className="font-semibold text-slate-700">{selected.direccion_servicio || '--'}</p></div>
                         <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Falla reportada</p><p className="text-slate-600">{selected.descripcion_falla || '--'}</p></div>
                       </div>
-                      {/* Panel SLA ejecución — solo admin, no visible al técnico */}
-                      {selected.sla_ejecucion && (
-                        <div className={`rounded-xl p-4 border ${
-                          selected.sla_ejecucion.excedido === true
-                            ? 'bg-red-50 border-red-200'
-                            : selected.sla_ejecucion.excedido === false
-                              ? 'bg-emerald-50 border-emerald-200'
-                              : 'bg-slate-50 border-slate-200'
-                        }`}>
-                          <div className="flex items-center gap-2 mb-3">
-                            {selected.sla_ejecucion.excedido === true
-                              ? <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-                              : selected.sla_ejecucion.excedido === false
-                                ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
-                                : <Clock className="h-4 w-4 text-slate-400 shrink-0" />
-                            }
-                            <span className={`text-sm font-semibold ${
-                              selected.sla_ejecucion.excedido === true
-                                ? 'text-red-700'
-                                : selected.sla_ejecucion.excedido === false
-                                  ? 'text-emerald-700'
-                                  : 'text-slate-700'
-                            }`}>
-                              {selected.sla_ejecucion.excedido === true
-                                ? 'Excedió el tiempo SLA'
-                                : selected.sla_ejecucion.excedido === false
-                                  ? 'Dentro del tiempo SLA'
-                                  : 'Tiempo estimado de ejecución'}
-                            </span>
-                          </div>
+
+                      {/* Panel SLA ejecución — siempre visible para el admin */}
+                      <div className={`rounded-xl p-4 border ${
+                        selected.sla_ejecucion?.excedido === true
+                          ? 'bg-red-50 border-red-200'
+                          : selected.sla_ejecucion?.excedido === false
+                            ? 'bg-emerald-50 border-emerald-200'
+                            : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <div className="flex items-center gap-2 mb-3">
+                          {selected.sla_ejecucion?.excedido === true
+                            ? <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                            : selected.sla_ejecucion?.excedido === false
+                              ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                              : <Clock className="h-4 w-4 text-slate-400 shrink-0" />
+                          }
+                          <span className={`text-sm font-semibold ${
+                            selected.sla_ejecucion?.excedido === true
+                              ? 'text-red-700'
+                              : selected.sla_ejecucion?.excedido === false
+                                ? 'text-emerald-700'
+                                : 'text-slate-600'
+                          }`}>
+                            {selected.sla_ejecucion?.excedido === true
+                              ? 'Excedió el tiempo SLA'
+                              : selected.sla_ejecucion?.excedido === false
+                                ? 'Dentro del tiempo SLA'
+                                : selected.sla_ejecucion
+                                  ? 'Tiempo de ejecución — en curso'
+                                  : 'Tiempo de ejecución SLA'}
+                          </span>
+                        </div>
+
+                        {selected.sla_ejecucion ? (
                           <div className="grid grid-cols-2 gap-3 text-sm">
                             <div>
                               <p className="text-[11px] text-slate-500 font-medium">Tiempo esperado</p>
                               <p className="font-semibold text-slate-700 mt-0.5">{selected.sla_ejecucion.max_min} min</p>
                             </div>
-                            {selected.sla_ejecucion.real_min !== null && (
+                            {selected.sla_ejecucion.real_min !== null ? (
                               <div>
                                 <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
                                 <p className={`font-semibold mt-0.5 ${selected.sla_ejecucion.excedido ? 'text-red-600' : 'text-emerald-600'}`}>
                                   {selected.sla_ejecucion.real_min} min
                                   {selected.sla_ejecucion.excedido && (
                                     <span className="text-[11px] text-red-400 font-normal ml-1">
-                                      (+{selected.sla_ejecucion.real_min - selected.sla_ejecucion.max_min} min)
+                                      (+{selected.sla_ejecucion.real_min - selected.sla_ejecucion.max_min} min extra)
                                     </span>
                                   )}
                                 </p>
                               </div>
+                            ) : (
+                              <div>
+                                <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5 italic">Disponible al completar</p>
+                              </div>
                             )}
                           </div>
-                        </div>
-                      )}
+                        ) : (
+                          <p className="text-xs text-slate-400">
+                            {selected.tipo_servicio
+                              ? 'Sin configuración SLA para este tipo de servicio'
+                              : 'Asigna un tipo de servicio para ver el SLA'}
+                          </p>
+                        )}
+                      </div>
                       <div>
                         <p className="text-[11px] text-slate-400 font-medium mb-1.5">Técnico asignado</p>
                         {selected.estado === 'completado' || selected.estado === 'cancelado' ? (
