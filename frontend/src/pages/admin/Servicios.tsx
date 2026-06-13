@@ -227,28 +227,24 @@ export const Servicios = () => {
                         <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Teléfono</p><p className="font-semibold text-slate-700">{selected.cliente?.telefono}</p></div>
                         <div className="bg-slate-50 rounded-xl p-3">
                           <p className="text-[11px] text-slate-400 font-medium mb-1">Tipo de servicio</p>
-                          {selected.estado === 'completado' || selected.estado === 'cancelado' ? (
-                            <p className="font-semibold text-slate-700 capitalize">{selected.tipo_servicio || <span className="text-slate-400 font-normal">Sin asignar</span>}</p>
-                          ) : (
-                            <select
-                              value={selected.tipo_servicio || ''}
-                              onChange={async (e) => {
-                                const tipo = e.target.value;
-                                try {
-                                  await actualizarServicio(selected.id, { tipo_servicio: (tipo as Servicio['tipo_servicio']) || undefined });
-                                  await openDrawer(selected.id);
-                                  fetchServicios();
-                                } catch { toast.error('Error actualizando tipo de servicio'); }
-                              }}
-                              className="w-full text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 capitalize"
-                            >
-                              <option value="">Sin asignar</option>
-                              <option value="diagnostico">Diagnóstico</option>
-                              <option value="mantenimiento">Mantenimiento</option>
-                              <option value="reparacion">Reparación</option>
-                              <option value="instalacion">Instalación</option>
-                            </select>
-                          )}
+                          <select
+                            value={selected.tipo_servicio || ''}
+                            onChange={async (e) => {
+                              const tipo = e.target.value;
+                              try {
+                                await actualizarServicio(selected.id, { tipo_servicio: (tipo as Servicio['tipo_servicio']) || undefined });
+                                await openDrawer(selected.id);
+                                fetchServicios();
+                              } catch { toast.error('Error actualizando tipo de servicio'); }
+                            }}
+                            className="w-full text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="">Sin asignar</option>
+                            <option value="diagnostico">Diagnóstico</option>
+                            <option value="mantenimiento">Mantenimiento</option>
+                            <option value="reparacion">Reparación</option>
+                            <option value="instalacion">Instalación</option>
+                          </select>
                         </div>
                         <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Fecha</p><p className="font-semibold text-slate-700">{selected.fecha_programada ? formatDate(selected.fecha_programada) : '--'}</p></div>
                         <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Equipo</p><p className="font-semibold text-slate-700">{selected.equipo ? `${tipoEquipoLabel[selected.equipo.tipo]} ${selected.equipo.marca || ''}` : '--'}</p></div>
