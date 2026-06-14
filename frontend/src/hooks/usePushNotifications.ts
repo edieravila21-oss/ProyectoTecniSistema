@@ -35,14 +35,19 @@ export function usePushNotifications(enabled: boolean) {
 
     const setup = async () => {
       try {
+        console.log('[Push] Iniciando suscripción...');
+
         const { data: keyRes } = await api.get<{ success: boolean; data: { publicKey: string } }>('/push/vapid-public-key');
         const publicKey = keyRes.data.publicKey;
+        console.log('[Push] VAPID public key:', publicKey ? '✅ recibida' : '❌ vacía (agrega VAPID_PUBLIC_KEY en Railway)');
         if (!publicKey) return;
 
         const registration = await navigator.serviceWorker.register(SW_URL, { scope: '/' });
         await navigator.serviceWorker.ready;
+        console.log('[Push] Service Worker registrado:', registration.scope);
 
         const permission = await Notification.requestPermission();
+        console.log('[Push] Permiso de notificaciones:', permission);
         if (permission !== 'granted') return;
 
         const subscription = await registration.pushManager.subscribe({
@@ -50,9 +55,11 @@ export function usePushNotifications(enabled: boolean) {
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         });
 
+        console.log('[Push] Suscripción creada, guardando en backend...');
         await api.post('/push/subscribe', subscription.toJSON());
+        console.log('[Push] ✅ Suscripción guardada correctamente');
       } catch (err) {
-        console.warn('[Push] No se pudo suscribir:', err);
+        console.error('[Push] ❌ Error en suscripción:', err);
       }
     };
 
