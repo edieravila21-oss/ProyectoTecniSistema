@@ -194,7 +194,7 @@ export interface TecnicoEstado {
   foto_url?: string;
   estado: string;
   servicios_hoy: number;
-  servicio_activo?: { id: string; estado: string; direccion_servicio?: string };
+  servicio_activo?: { id: string; estado: string; direccion_servicio?: string; fecha_inicio_real?: string; cliente?: { nombre: string } };
 }
 
 export interface ConfiguracionSLA {

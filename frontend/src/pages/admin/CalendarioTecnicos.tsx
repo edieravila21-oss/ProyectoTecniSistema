@@ -211,7 +211,7 @@ export const CalendarioTecnicos = () => {
         setEquipos(res.data);
         // Pre-fill address from client
         const cliente = clientes.find(c => c.id === clienteId);
-        if (cliente?.direccion) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion || '' }));
+        if (cliente?.direccion_principal) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion_principal || '' }));
       } catch { setEquipos([]); }
     }
   };
@@ -855,7 +855,7 @@ export const CalendarioTecnicos = () => {
                         <span className="font-normal ml-1">{citaForm.hora_inicio}–{citaForm.hora_fin}</span>
                       </label>
                       <div className="space-y-2">
-                        {getDisponibilidadTecnicos().map(({ tecnico, servsDia, conflicto, bloqueado, libre }) => {
+                        {getDisponibilidadTecnicos().map(({ tecnico, servsDia, conflicto, bloqueado }) => {
                           const selected = citaForm.tecnicoId === tecnico.id;
                           return (
                             <button
