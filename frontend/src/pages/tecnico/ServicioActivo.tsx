@@ -70,6 +70,7 @@ export const ServicioActivo = () => {
   const [servicio, setServicio] = useState<Servicio | null>(null);
   const [loading, setLoading] = useState(true);
   const [pasoActual, setPasoActual] = useState(0);
+  const initialLoadDone = useRef(false);
   const [uploadingTipos, setUploadingTipos] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [notasTecnico, setNotasTecnico] = useState('');
@@ -98,16 +99,20 @@ export const ServicioActivo = () => {
       const { data: res } = await getServicio(id);
       setServicio(res.data);
 
-      if (res.data.estado === 'asignado' || res.data.estado === 'en_camino') setPasoActual(0);
-      else if (res.data.estado === 'en_servicio') {
-        const cl = res.data.checklist || [];
-        const llegada = cl.filter(c => c.categoria === 'llegada');
-        const diag = cl.filter(c => c.categoria === 'diagnostico');
-        const rep = cl.filter(c => c.categoria === 'reparacion');
-        if (rep.every(c => c.completado)) setPasoActual(4);
-        else if (diag.every(c => c.completado)) setPasoActual(3);
-        else if (llegada.every(c => c.completado)) setPasoActual(2);
-        else setPasoActual(1);
+      // Solo calcula el paso en la carga inicial — no en refreshes posteriores
+      if (!initialLoadDone.current) {
+        initialLoadDone.current = true;
+        if (res.data.estado === 'asignado' || res.data.estado === 'en_camino') setPasoActual(0);
+        else if (res.data.estado === 'en_servicio') {
+          const cl = res.data.checklist || [];
+          const llegada = cl.filter(c => c.categoria === 'llegada');
+          const diag = cl.filter(c => c.categoria === 'diagnostico');
+          const rep = cl.filter(c => c.categoria === 'reparacion');
+          if (rep.every(c => c.completado)) setPasoActual(4);
+          else if (diag.every(c => c.completado)) setPasoActual(3);
+          else if (llegada.every(c => c.completado)) setPasoActual(2);
+          else setPasoActual(1);
+        }
       }
       if (res.data.valor_final) setValorFinal(String(res.data.valor_final));
       if (res.data.notas_tecnico) setDescripcionTrabajo(res.data.notas_tecnico);
@@ -523,28 +528,35 @@ export const ServicioActivo = () => {
           <CardContent className="p-4 pt-3 space-y-4">
             <h2 className="font-bold text-lg text-center">Llegada</h2>
 
-            {/* Foto ANTES — auto-check al subir */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium">Foto del equipo ANTES (obligatoria)</p>
-                <span className="text-xs text-slate-500 font-medium">{servicio.fotos?.filter(f => f.tipo === 'antes').length || 0} foto(s)</span>
-              </div>
-              {servicio.fotos?.filter(f => f.tipo === 'antes').map(f => (
-                <img key={f.id} src={f.url} alt="Antes" className="mb-2 rounded-lg w-full max-h-48 object-cover" />
-              ))}
-              {!servicio.fotos?.some(f => f.tipo === 'antes') && (
-                <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes')}>
-                  <Camera className="h-5 w-5 mr-2" />
-                  {uploadingTipos.has('antes') ? 'Subiendo foto...' : 'Tomar foto antes del servicio'}
-                </Button>
-              )}
-              {servicio.fotos?.some(f => f.tipo === 'antes') && (
-                <Button variant="outline" className="w-full min-h-10 text-xs text-slate-500" onClick={() => handleSubirFoto('antes')}>
-                  <Camera className="h-4 w-4 mr-1" />
-                  {uploadingTipos.has('antes') ? 'Subiendo...' : 'Agregar otra foto antes'}
-                </Button>
-              )}
-            </div>
+            {/* Fotos ANTES — máx 2 */}
+            {(() => {
+              const fotosAntes = servicio.fotos?.filter(f => f.tipo === 'antes') || [];
+              const maxAntes = 2;
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">Fotos del equipo ANTES <span className="text-slate-400 font-normal">(obligatorias)</span></p>
+                    <span className={`text-xs font-medium ${fotosAntes.length >= maxAntes ? 'text-emerald-600' : 'text-slate-500'}`}>{fotosAntes.length}/{maxAntes}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {fotosAntes.map(f => (
+                      <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                        <img src={f.url} alt="Antes" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                  {fotosAntes.length < maxAntes && (
+                    <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes')}>
+                      <Camera className="h-5 w-5 mr-2" />
+                      {uploadingTipos.has('antes') ? 'Subiendo foto...' : fotosAntes.length === 0 ? 'Tomar foto antes del servicio' : 'Tomar segunda foto antes'}
+                    </Button>
+                  )}
+                  {fotosAntes.length >= maxAntes && (
+                    <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos antes completadas</p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Checklist de llegada con contexto */}
             <div className="space-y-2">
@@ -1081,37 +1093,39 @@ export const ServicioActivo = () => {
               ))}
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium">Fotos durante/después</p>
-                <span className="text-xs text-slate-500 font-medium">{servicio.fotos?.length || 0}/4</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {servicio.fotos?.filter(f => f.tipo !== 'antes').map(f => (
-                  <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                    <img src={f.url} alt={f.tipo} className="w-full h-full object-cover" />
+            {/* Fotos DURANTE — máx 2 */}
+            {(() => {
+              const fotosDurante = servicio.fotos?.filter(f => f.tipo === 'durante') || [];
+              const maxDurante = 2;
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">Fotos durante el servicio</p>
+                    <span className={`text-xs font-medium ${fotosDurante.length >= maxDurante ? 'text-emerald-600' : 'text-slate-500'}`}>{fotosDurante.length}/{maxDurante}</span>
                   </div>
-                ))}
-              </div>
-              {(servicio.fotos?.length || 0) >= 4 ? (
-                <p className="text-xs text-amber-600 mt-2 font-medium">Máximo de 4 fotos alcanzado</p>
-              ) : (
-                <div className="flex gap-2 mt-2">
-                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('durante')}>
-                    <Camera className="h-4 w-4 mr-1" />
-                    {uploadingTipos.has('durante') ? 'Subiendo...' : 'Durante'}
-                  </Button>
-                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('despues')}>
-                    <Camera className="h-4 w-4 mr-1" />
-                    {uploadingTipos.has('despues') ? 'Subiendo...' : 'Después'}
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {fotosDurante.map(f => (
+                      <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                        <img src={f.url} alt="Durante" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                  {fotosDurante.length < maxDurante && (
+                    <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('durante')}>
+                      <Camera className="h-4 w-4 mr-2" />
+                      {uploadingTipos.has('durante') ? 'Subiendo...' : fotosDurante.length === 0 ? 'Tomar foto durante el servicio' : 'Tomar segunda foto durante'}
+                    </Button>
+                  )}
+                  {fotosDurante.length >= maxDurante && (
+                    <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos durante completadas</p>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             <div>
               <Button className="w-full min-h-12" onClick={handleAvanzarACierre}
-                disabled={!itemsPorCat('reparacion').every(i => i.completado) || !servicio.fotos?.some(f => f.tipo === 'despues')}>
+                disabled={!itemsPorCat('reparacion').every(i => i.completado)}>
                 Continuar al cierre <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
@@ -1214,6 +1228,36 @@ export const ServicioActivo = () => {
                 </Select>
               </div>
             </div>
+
+            {/* Fotos DESPUÉS — máx 2 */}
+            {(() => {
+              const fotosDespues = servicio.fotos?.filter(f => f.tipo === 'despues') || [];
+              const maxDespues = 2;
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">Fotos después del servicio <span className="text-slate-400 font-normal">(obligatorias)</span></p>
+                    <span className={`text-xs font-medium ${fotosDespues.length >= maxDespues ? 'text-emerald-600' : 'text-slate-500'}`}>{fotosDespues.length}/{maxDespues}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {fotosDespues.map(f => (
+                      <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                        <img src={f.url} alt="Después" className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                  {fotosDespues.length < maxDespues && (
+                    <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('despues')}>
+                      <Camera className="h-4 w-4 mr-2" />
+                      {uploadingTipos.has('despues') ? 'Subiendo...' : fotosDespues.length === 0 ? 'Tomar foto después del servicio' : 'Tomar segunda foto después'}
+                    </Button>
+                  )}
+                  {fotosDespues.length >= maxDespues && (
+                    <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos después completadas</p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div>
               <div className="flex items-center justify-between mb-2">
