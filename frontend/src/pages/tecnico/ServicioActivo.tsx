@@ -6,7 +6,6 @@ import {
   getHistorialEquipo, eliminarServicio, corregirEquipo,
 } from '@/api/servicios';
 import { getHistorialCliente } from '@/api/clientes';
-import { getSlaConfigByTipo } from '@/api/slaConfig';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -15,7 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/components/shared/Toast';
 import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
-import type { Servicio, MetodoPago, ConfiguracionSLA } from '@/types';
+import type { Servicio, MetodoPago } from '@/types';
 import {
   Phone, MapPin, Camera, Check, CheckCircle,
   Trash2, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
@@ -31,13 +30,6 @@ interface HistorialCliente {
 
 const pasos = ['En camino', 'Llegada', 'Diagnóstico', 'Reparación', 'Cierre'];
 
-const SLA_FALLBACK_CAMINO_MIN = 15;
-const SLA_FALLBACK_EJECUCION_MIN: Record<string, number> = {
-  diagnostico: 30,
-  mantenimiento: 45,
-  reparacion: 120,
-  instalacion: 180,
-};
 
 const repuestosComunes: Record<string, { nombre: string; precio: number }[]> = {
   aire_acondicionado: [
@@ -99,8 +91,6 @@ export const ServicioActivo = () => {
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
   const [showCustomRepuesto, setShowCustomRepuesto] = useState(false);
   const [customRepuestoNombre, setCustomRepuestoNombre] = useState('');
-  const [slaSegundos, setSlaSegundos] = useState(0);
-  const [slaConfig, setSlaConfig] = useState<ConfiguracionSLA | null>(null);
 
   const fetchServicio = async () => {
     if (!id) return;
@@ -168,28 +158,6 @@ export const ServicioActivo = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicio?.equipoId, servicio?.clienteId]);
 
-  // SLA live timer — tracks travel (en_camino) or execution (en_servicio)
-  useEffect(() => {
-    const startIso = servicio?.estado === 'en_camino'
-      ? servicio.fecha_en_camino
-      : servicio?.estado === 'en_servicio'
-        ? servicio.fecha_inicio_real
-        : null;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!startIso) { setSlaSegundos(0); return; }
-    const inicio = new Date(startIso).getTime();
-    const tick = () => setSlaSegundos(Math.floor((Date.now() - inicio) / 1000));
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [servicio?.estado, servicio?.fecha_en_camino, servicio?.fecha_inicio_real]);
-
-  useEffect(() => {
-    if (!servicio?.tipo_servicio) return;
-    getSlaConfigByTipo(servicio.tipo_servicio)
-      .then(r => setSlaConfig(r.data.data))
-      .catch(() => { /* usa fallback hardcodeado */ });
-  }, [servicio?.tipo_servicio]);
 
   const handleCambiarEstado = async (estado: string) => {
     if (!id) return;
@@ -374,46 +342,6 @@ export const ServicioActivo = () => {
         ))}
       </div>
 
-      {/* SLA Timer */}
-      {(servicio.estado === 'en_camino' || servicio.estado === 'en_servicio') && (() => {
-        const isTraslado = servicio.estado === 'en_camino';
-        const maxMin = isTraslado
-          ? (slaConfig?.max_tiempo_camino_min ?? SLA_FALLBACK_CAMINO_MIN)
-          : (slaConfig?.max_tiempo_ejecucion_min ?? SLA_FALLBACK_EJECUCION_MIN[servicio.tipo_servicio ?? ''] ?? 60);
-        const elapsedMin = slaSegundos / 60;
-        const pct = Math.min((elapsedMin / maxMin) * 100, 100);
-        const vencido = elapsedMin >= maxMin;
-        const enRiesgo = pct >= 75 && !vencido;
-        const mm = String(Math.floor(slaSegundos / 60)).padStart(2, '0');
-        const ss = String(slaSegundos % 60).padStart(2, '0');
-        const maxMm = String(maxMin).padStart(2, '0');
-        return (
-          <div className={`rounded-xl px-3 py-2.5 flex items-center gap-3 ${
-            vencido ? 'bg-red-50 border border-red-200' :
-            enRiesgo ? 'bg-amber-50 border border-amber-200' :
-            'bg-slate-50 border border-slate-100'
-          }`}>
-            <Clock className={`h-4 w-4 shrink-0 ${vencido ? 'text-red-500' : enRiesgo ? 'text-amber-500' : 'text-slate-400'}`} />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1">
-                <span className={`text-[11px] font-semibold uppercase tracking-wider ${vencido ? 'text-red-700' : enRiesgo ? 'text-amber-700' : 'text-slate-500'}`}>
-                  SLA {isTraslado ? 'traslado' : 'ejecución'}
-                  {vencido && ' · VENCIDO'}
-                </span>
-                <span className={`text-xs font-mono font-bold tabular-nums ${vencido ? 'text-red-700' : enRiesgo ? 'text-amber-700' : 'text-slate-700'}`}>
-                  {mm}:{ss} / {maxMm}:00
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-1.5">
-                <div
-                  className={`h-1.5 rounded-full transition-none ${vencido ? 'bg-red-500' : enRiesgo ? 'bg-amber-500' : 'bg-green-500'}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* PASO 0 — EN CAMINO */}
       {pasoActual === 0 && (
