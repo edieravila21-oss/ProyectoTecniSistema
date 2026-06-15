@@ -279,23 +279,13 @@ export const CalendarioTecnicos = () => {
             Vista semanal de disponibilidad — {tecnicos.length} técnicos activos
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => openCreateModal(undefined, undefined, 'bloqueo')}
-            className="rounded-xl gap-1.5"
-          >
-            <Ban className="h-4 w-4" />
-            Bloquear horario
-          </Button>
-          <Button
-            onClick={() => openCreateModal(undefined, undefined, 'cita')}
-            className="rounded-xl gap-1.5"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            Agendar cita
-          </Button>
-        </div>
+        <Button
+          onClick={() => openCreateModal(undefined, undefined, 'cita')}
+          className="rounded-xl gap-1.5"
+        >
+          <CalendarPlus className="h-4 w-4" />
+          Nueva cita / bloqueo
+        </Button>
       </div>
 
       {/* Controls */}
