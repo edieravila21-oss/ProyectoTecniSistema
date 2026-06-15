@@ -13,11 +13,28 @@ import {
   MapPin, TrendingUp, ArrowUpRight,
 } from 'lucide-react';
 
+function useNow(intervalMs = 1000) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
+function formatElapsed(ms: number) {
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 export const Dashboard = () => {
   const [metricas, setMetricas] = useState<MetricasHoy | null>(null);
   const [servicios, setServicios] = useState<Servicio[]>([]);
   const [loading, setLoading] = useState(true);
   const { socket } = useSocketStore();
+  const now = useNow();
   const navigate = useNavigate();
 
   const fetchData = async () => {
@@ -140,9 +157,17 @@ export const Dashboard = () => {
               </div>
 
               {t.servicio_activo && (
-                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 text-xs text-amber-600">
-                  <MapPin className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{t.servicio_activo.direccion_servicio || 'En servicio'}</span>
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{t.servicio_activo.direccion_servicio || t.servicio_activo.cliente?.nombre || 'En servicio'}</span>
+                  </div>
+                  {t.servicio_activo.estado === 'en_servicio' && t.servicio_activo.fecha_inicio_real && (
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <Clock className="h-3 w-3 shrink-0 text-slate-400" />
+                      <span>En servicio hace <span className="font-semibold text-slate-700">{formatElapsed(now - new Date(t.servicio_activo.fecha_inicio_real).getTime())}</span></span>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>

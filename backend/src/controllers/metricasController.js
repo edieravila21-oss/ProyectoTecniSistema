@@ -20,7 +20,7 @@ const hoy = async (req, res, next) => {
           id: true, nombre: true, foto_url: true,
           servicios: {
             where: whereHoy,
-            select: { id: true, estado: true, direccion_servicio: true },
+            select: { id: true, estado: true, direccion_servicio: true, fecha_inicio_real: true, cliente: { select: { nombre: true } } },
             orderBy: { hora_inicio: 'asc' },
           },
         },

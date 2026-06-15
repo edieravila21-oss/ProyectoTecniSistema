@@ -70,7 +70,7 @@ export const ServicioActivo = () => {
   const [servicio, setServicio] = useState<Servicio | null>(null);
   const [loading, setLoading] = useState(true);
   const [pasoActual, setPasoActual] = useState(0);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingTipos, setUploadingTipos] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [notasTecnico, setNotasTecnico] = useState('');
   const [valorFinal, setValorFinal] = useState('');
@@ -226,7 +226,7 @@ export const ServicioActivo = () => {
     setPasoActual(4);
   };
 
-  const handleSubirFoto = async (tipo: 'antes' | 'durante' | 'despues') => {
+  const handleSubirFoto = (tipo: 'antes' | 'durante' | 'despues') => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -234,18 +234,21 @@ export const ServicioActivo = () => {
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file || !id) return;
-      setUploading(true);
+
+      // Sube en segundo plano — el técnico puede continuar de inmediato
+      setUploadingTipos(prev => new Set(prev).add(tipo));
+      toast.success('📷 Foto tomada, subiendo en segundo plano...');
+
       try {
         const formData = new FormData();
         formData.append('foto', file);
         formData.append('tipo', tipo);
         await subirFoto(id, formData);
-        toast.success('Foto subida');
         if (tipo === 'antes') await autoCheckLlegadaItem('foto');
         if (tipo === 'despues') await autoCheckCierreItem('foto');
         fetchServicio();
-      } catch { toast.error('Error subiendo foto'); }
-      finally { setUploading(false); }
+      } catch { toast.error('Error subiendo foto, intenta de nuevo'); }
+      finally { setUploadingTipos(prev => { const s = new Set(prev); s.delete(tipo); return s; }); }
     };
     input.click();
   };
@@ -530,13 +533,15 @@ export const ServicioActivo = () => {
                 <img key={f.id} src={f.url} alt="Antes" className="mb-2 rounded-lg w-full max-h-48 object-cover" />
               ))}
               {!servicio.fotos?.some(f => f.tipo === 'antes') && (
-                <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes')} disabled={uploading}>
-                  <Camera className="h-5 w-5 mr-2" />{uploading ? 'Subiendo...' : 'Tomar foto antes del servicio'}
+                <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes')}>
+                  <Camera className="h-5 w-5 mr-2" />
+                  {uploadingTipos.has('antes') ? 'Subiendo foto...' : 'Tomar foto antes del servicio'}
                 </Button>
               )}
               {servicio.fotos?.some(f => f.tipo === 'antes') && (
-                <Button variant="outline" className="w-full min-h-10 text-xs text-slate-500" onClick={() => handleSubirFoto('antes')} disabled={uploading}>
-                  <Camera className="h-4 w-4 mr-1" />Agregar otra foto antes
+                <Button variant="outline" className="w-full min-h-10 text-xs text-slate-500" onClick={() => handleSubirFoto('antes')}>
+                  <Camera className="h-4 w-4 mr-1" />
+                  {uploadingTipos.has('antes') ? 'Subiendo...' : 'Agregar otra foto antes'}
                 </Button>
               )}
             </div>
@@ -1092,11 +1097,13 @@ export const ServicioActivo = () => {
                 <p className="text-xs text-amber-600 mt-2 font-medium">Máximo de 4 fotos alcanzado</p>
               ) : (
                 <div className="flex gap-2 mt-2">
-                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('durante')} disabled={uploading}>
-                    <Camera className="h-4 w-4 mr-1" />Durante
+                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('durante')}>
+                    <Camera className="h-4 w-4 mr-1" />
+                    {uploadingTipos.has('durante') ? 'Subiendo...' : 'Durante'}
                   </Button>
-                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('despues')} disabled={uploading}>
-                    <Camera className="h-4 w-4 mr-1" />Después
+                  <Button variant="outline" className="flex-1 min-h-12" onClick={() => handleSubirFoto('despues')}>
+                    <Camera className="h-4 w-4 mr-1" />
+                    {uploadingTipos.has('despues') ? 'Subiendo...' : 'Después'}
                   </Button>
                 </div>
               )}
@@ -1156,19 +1163,29 @@ export const ServicioActivo = () => {
                 <div className="space-y-2">
                   {itemsPorCat('cierre').map(item => {
                     const desc = item.descripcion.toLowerCase();
-                    const isAuto = desc.includes('foto') || desc.includes('firma') || desc.includes('valor');
+                    const isFirmaItem = desc.includes('firma');
+                    const isFotoItem = desc.includes('foto');
+                    const isValorItem = desc.includes('valor');
+                    const isAuto = isFirmaItem || isFotoItem || isValorItem;
+                    const hint = isFirmaItem
+                      ? '✍️ Se confirma al guardar la firma del cliente'
+                      : isFotoItem
+                        ? '📷 Se confirma al subir la foto'
+                        : isValorItem
+                          ? '💰 Se confirma al ingresar el valor cobrado'
+                          : null;
                     return (
                       <button
                         key={item.id}
-                        className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 ${isAuto && !item.completado ? 'opacity-60' : ''}`}
+                        className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 ${isAuto && !item.completado ? 'opacity-60 cursor-default' : ''}`}
                         onClick={() => !item.completado && !isAuto && handleChecklistItem(item.id)}
                         disabled={item.completado || isAuto}
                       >
                         <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
                         <div className="flex-1">
                           <span className={`text-sm ${item.completado ? 'line-through text-muted-foreground' : ''}`}>{item.descripcion}</span>
-                          {isAuto && !item.completado && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">Se completa automáticamente</p>
+                          {hint && !item.completado && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>
                           )}
                         </div>
                       </button>
