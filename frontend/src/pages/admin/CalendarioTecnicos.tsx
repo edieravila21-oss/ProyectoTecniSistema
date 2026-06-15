@@ -14,11 +14,10 @@ import {
   ChevronLeft, ChevronRight, X, Users, Calendar, MapPin,
   Phone, Wrench, Sun, Moon, Clock, AlertTriangle, Plus,
   Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff, Trash2,
-  CheckCircle2, CalendarPlus,
+  CheckCircle2, CalendarPlus, Plus as PlusIcon,
 } from 'lucide-react';
 import {
-  format, addDays, addWeeks, subWeeks,
-  startOfWeek, endOfWeek, isSameDay, isToday,
+  format, addDays, isSameDay, isToday,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -70,9 +69,15 @@ export const CalendarioTecnicos = () => {
     direccion_servicio: '', valor_estimado: '40000',
   });
 
-  const weekStart = startOfWeek(fecha, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(fecha, { weekStartsOn: 1 });
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const HORAS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+  const HORA_INICIO = 7;
+  const PX_POR_HORA = 90;
+
+  const parseHora = (hora: string | undefined, fallback = 8) => {
+    if (!hora) return fallback;
+    const [h, m] = hora.split(':').map(Number);
+    return h + (m || 0) / 60;
+  };
 
   const [form, setForm] = useState({
     tecnicoId: '',
@@ -88,17 +93,11 @@ export const CalendarioTecnicos = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const diaStr = format(fecha, 'yyyy-MM-dd');
       const [servRes, tecRes, evtRes] = await Promise.all([
-        getServicios({
-          desde: format(weekStart, 'yyyy-MM-dd'),
-          hasta: format(weekEnd, 'yyyy-MM-dd'),
-          limit: '200',
-        }),
+        getServicios({ desde: diaStr, hasta: diaStr, limit: '200' }),
         getUsuarios({ rol: 'tecnico', activo: 'true' }),
-        getEventosCalendario({
-          desde: format(weekStart, 'yyyy-MM-dd'),
-          hasta: format(weekEnd, 'yyyy-MM-dd'),
-        }),
+        getEventosCalendario({ desde: diaStr, hasta: diaStr }),
       ]);
       setServicios(servRes.data.data);
       setTecnicos(tecRes.data.data);
@@ -109,36 +108,13 @@ export const CalendarioTecnicos = () => {
 
   useEffect(() => { fetchData(); }, [fecha]);
 
-  const getServiciosForCell = (tecnicoId: string, dia: Date, turno: 'AM' | 'PM') =>
-    servicios.filter(s => {
-      if (s.tecnicoId !== tecnicoId || !s.fecha_programada) return false;
-      if (!isSameDay(new Date(s.fecha_programada), dia)) return false;
-      const hora = parseInt(s.hora_inicio || '08');
-      return turno === 'AM' ? hora < 13 : hora >= 13;
-    });
-
-  const getEventosForCell = (tecnicoId: string, dia: Date, turno: 'AM' | 'PM') =>
-    eventos.filter(e => {
-      if (e.tecnicoId !== tecnicoId) return false;
-      if (!isSameDay(new Date(e.fecha), dia)) return false;
-      if (e.todo_el_dia) return true;
-      const hora = parseInt(e.hora_inicio || '08');
-      return turno === 'AM' ? hora < 13 : hora >= 13;
-    });
-
-  const getTotalForDay = (tecnicoId: string, dia: Date) =>
-    servicios.filter(s => s.tecnicoId === tecnicoId && s.fecha_programada && isSameDay(new Date(s.fecha_programada), dia));
-
   const sinAsignar = servicios.filter(s => !s.tecnicoId);
 
-  const getWeekStats = (tecnicoId: string) => {
-    const servsTec = servicios.filter(s => s.tecnicoId === tecnicoId);
-    const completados = servsTec.filter(s => s.estado === 'completado').length;
-    const activos = servsTec.filter(s => !['completado', 'cancelado'].includes(s.estado)).length;
-    const slotsOcupados = servsTec.length;
-    const bloqueos = eventos.filter(e => e.tecnicoId === tecnicoId).length;
-    return { completados, activos, slotsOcupados, total: servsTec.length, bloqueos };
-  };
+  const getServiciosDia = (tecnicoId: string) =>
+    servicios.filter(s => s.tecnicoId === tecnicoId && s.fecha_programada && isSameDay(new Date(s.fecha_programada), fecha));
+
+  const getEventosDia = (tecnicoId: string) =>
+    eventos.filter(e => e.tecnicoId === tecnicoId && isSameDay(new Date(e.fecha), fecha));
 
   const filteredTecnicos = selectedTecnico
     ? tecnicos.filter(t => t.id === selectedTecnico)
@@ -184,7 +160,7 @@ export const CalendarioTecnicos = () => {
   };
 
   const openCreateModal = (tecnicoId?: string, dia?: Date, mode: ModalMode = 'bloqueo') => {
-    const fechaStr = dia ? format(dia, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
+    const fechaStr = dia ? format(dia, 'yyyy-MM-dd') : format(fecha, 'yyyy-MM-dd');
     setModalMode(mode);
     setForm({
       tecnicoId: tecnicoId || (tecnicos.length > 0 ? tecnicos[0].id : ''),
@@ -292,18 +268,18 @@ export const CalendarioTecnicos = () => {
       <Card className="p-3">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
-            <button onClick={() => setFecha(d => subWeeks(d, 1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
+            <button onClick={() => setFecha(d => addDays(d, -1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
               <ChevronLeft className="h-4 w-4 text-slate-600" />
             </button>
             <div className="px-4 py-2 text-sm font-semibold text-slate-700 min-w-[260px] text-center capitalize">
-              {format(weekStart, "d MMM", { locale: es })} — {format(weekEnd, "d 'de' MMMM yyyy", { locale: es })}
+              {format(fecha, "EEEE d 'de' MMMM yyyy", { locale: es })}
             </div>
-            <button onClick={() => setFecha(d => addWeeks(d, 1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
+            <button onClick={() => setFecha(d => addDays(d, 1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
               <ChevronRight className="h-4 w-4 text-slate-600" />
             </button>
           </div>
-          <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setFecha(new Date())}>
-            Esta semana
+          <Button variant="outline" size="sm" className={`rounded-xl ${isToday(fecha) ? 'border-blue-400 text-blue-600' : ''}`} onClick={() => setFecha(new Date())}>
+            Hoy
           </Button>
 
           {/* Technician filter */}
@@ -356,265 +332,161 @@ export const CalendarioTecnicos = () => {
 
       {loading ? <LoadingSkeleton rows={6} /> : (
         <>
-          {/* Resource Grid */}
+          {/* Timeline diaria */}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[950px]">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200">
-                    <th className="text-left p-3 w-[200px] sticky left-0 bg-slate-50/80 z-10 backdrop-blur-sm border-r border-slate-200">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Técnico</span>
-                    </th>
-                    {weekDays.map(day => {
-                      const hoy = isToday(day);
-                      const domingo = day.getDay() === 0;
-                      return (
-                        <th key={day.toISOString()} className={`p-2.5 text-center min-w-[115px] border-l border-slate-100 ${hoy ? 'bg-blue-50' : domingo ? 'bg-slate-100/50' : ''}`}>
-                          <p className={`text-[10px] font-bold uppercase tracking-wide ${hoy ? 'text-blue-500' : 'text-slate-400'}`}>
-                            {format(day, 'EEEE', { locale: es })}
-                          </p>
-                          <p className={`text-xl font-black mt-0.5 ${hoy ? 'text-blue-600' : 'text-slate-700'}`}>
-                            {format(day, 'd')}
-                          </p>
-                          <p className="text-[10px] text-slate-400 capitalize">{format(day, 'MMM', { locale: es })}</p>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTecnicos.map((tec, tIdx) => {
-                    const stats = getWeekStats(tec.id);
-                    const esp = especialidadBadge[tec.especialidad] || especialidadBadge.ambos;
-                    return (
-                      <tr key={tec.id} className={`border-b border-slate-100 ${tIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
-                        {/* Technician cell */}
-                        <td className={`p-3 sticky left-0 z-10 border-r border-slate-200 ${tIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}`}>
-                          <div className="flex items-center gap-2.5">
-                            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
-                              {tec.nombre.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-sm text-slate-800 truncate">{tec.nombre}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${esp.cls}`}>{esp.label}</span>
-                                <span className="text-[10px] text-slate-400">{stats.total} serv.</span>
-                                {stats.bloqueos > 0 && (
-                                  <span className="text-[10px] text-red-400">{stats.bloqueos} bloq.</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all"
-                                style={{ width: `${Math.min(100, (stats.slotsOcupados / 12) * 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400">{Math.round((stats.slotsOcupados / 12) * 100)}%</span>
-                          </div>
-                        </td>
+              <div style={{ minWidth: 160 + HORAS.length * PX_POR_HORA }}>
 
-                        {/* Day cells */}
-                        {weekDays.map(day => {
-                          const amServs = getServiciosForCell(tec.id, day, 'AM');
-                          const pmServs = getServiciosForCell(tec.id, day, 'PM');
-                          const amEvts = getEventosForCell(tec.id, day, 'AM');
-                          const pmEvts = getEventosForCell(tec.id, day, 'PM');
-                          const totalDay = getTotalForDay(tec.id, day);
-                          const dayEvts = eventos.filter(e => e.tecnicoId === tec.id && isSameDay(new Date(e.fecha), day));
-                          const isSunday = day.getDay() === 0;
-                          const hoy = isToday(day);
+                {/* Cabecera de horas */}
+                <div className="flex border-b border-slate-200 bg-slate-50/80">
+                  <div className="shrink-0 border-r border-slate-200 p-3" style={{ width: 160 }}>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Técnico</span>
+                  </div>
+                  <div className="flex flex-1">
+                    {HORAS.map(h => (
+                      <div key={h} style={{ width: PX_POR_HORA }} className="text-center py-2 border-l border-slate-100 shrink-0">
+                        <span className="text-[10px] font-bold text-slate-400">{String(h).padStart(2, '0')}:00</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
+                {/* Filas de técnicos */}
+                {filteredTecnicos.map((tec, idx) => {
+                  const servsDia = getServiciosDia(tec.id);
+                  const evtsDia = getEventosDia(tec.id);
+                  const esp = especialidadBadge[tec.especialidad] || especialidadBadge.ambos;
+                  const esHoy = isToday(fecha);
+                  const nowH = new Date().getHours() + new Date().getMinutes() / 60;
+                  const totalWidth = HORAS.length * PX_POR_HORA;
+
+                  return (
+                    <div key={tec.id} className={`flex border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
+                      {/* Info técnico */}
+                      <div
+                        className={`shrink-0 p-3 border-r border-slate-200 sticky left-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}`}
+                        style={{ width: 160 }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                            {tec.nombre.charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs text-slate-800 truncate">{tec.nombre}</p>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${esp.cls}`}>{esp.label}</span>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-center gap-1.5">
+                          {servsDia.length > 0 ? (
+                            <span className="text-[10px] text-slate-500 font-medium">{servsDia.length} servicio{servsDia.length !== 1 ? 's' : ''}</span>
+                          ) : evtsDia.length === 0 ? (
+                            <span className="text-[10px] text-emerald-600 font-bold">LIBRE</span>
+                          ) : null}
+                          {evtsDia.length > 0 && (
+                            <span className="text-[10px] text-red-400">{evtsDia.length} bloq.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Timeline */}
+                      <div className="relative" style={{ width: totalWidth, height: 80 }}>
+                        {/* Líneas de hora */}
+                        {HORAS.map(h => (
+                          <div key={h} style={{ left: (h - HORA_INICIO) * PX_POR_HORA }} className="absolute top-0 bottom-0 w-px bg-slate-100" />
+                        ))}
+
+                        {/* Indicador hora actual */}
+                        {esHoy && nowH >= HORA_INICIO && nowH <= HORA_INICIO + HORAS.length && (
+                          <div
+                            style={{ left: (nowH - HORA_INICIO) * PX_POR_HORA }}
+                            className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-20"
+                          >
+                            <div className="absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full bg-red-400" />
+                          </div>
+                        )}
+
+                        {/* Eventos todo el día */}
+                        {evtsDia.filter(e => e.todo_el_dia).map(evt => {
+                          const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
+                          const Icon = cfg.icon;
                           return (
-                            <td
-                              key={day.toISOString()}
-                              className={`p-1.5 align-top border-l border-slate-100 ${hoy ? 'bg-blue-50/30' : ''} ${isSunday ? 'bg-slate-100/30' : ''}`}
-                            >
-                              {isSunday ? (
-                                <div className="text-center py-6">
-                                  <div className="text-[10px] text-slate-300 font-bold">DESCANSO</div>
-                                </div>
-                              ) : totalDay.length === 0 && dayEvts.length === 0 ? (
-                                <div className="text-center py-5">
-                                  <div className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 border-dashed">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                                    <span className="text-[10px] font-bold text-emerald-600">LIBRE</span>
-                                  </div>
-                                  <button
-                                    onClick={() => openCreateModal(tec.id, day, 'bloqueo')}
-                                    className="mt-1.5 flex items-center justify-center gap-0.5 mx-auto text-[10px] text-slate-300 hover:text-blue-500 transition-colors"
-                                  >
-                                    <Plus className="h-3 w-3" /> Bloquear
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="space-y-1.5">
-                                  {/* AM events */}
-                                  {amEvts.map(evt => {
-                                    const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
-                                    const Icon = cfg.icon;
-                                    return (
-                                      <div
-                                        key={`evt-${evt.id}`}
-                                        className={`w-full text-left p-2 rounded-lg border text-[11px] leading-tight ${cfg.bg} ${cfg.border} relative group`}
-                                      >
-                                        <div className="flex items-center gap-1 mb-0.5">
-                                          <Icon className={`h-3 w-3 ${cfg.color} opacity-60`} />
-                                          <span className={`font-bold ${cfg.color}`}>
-                                            {evt.todo_el_dia ? 'Todo el día' : `${evt.hora_inicio} - ${evt.hora_fin}`}
-                                          </span>
-                                        </div>
-                                        <p className="font-semibold truncate text-slate-700">{evt.titulo}</p>
-                                        <button
-                                          onClick={() => handleEliminarEvento(evt.id)}
-                                          className="absolute top-1 right-1 h-5 w-5 rounded bg-white/80 hover:bg-red-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                          <Trash2 className="h-3 w-3 text-red-400" />
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-
-                                  {/* AM services */}
-                                  {amServs.length > 0 ? amServs.map(s => (
-                                    <button
-                                      key={s.id}
-                                      onClick={() => setSelectedServicio(s)}
-                                      className={`w-full text-left p-2 rounded-lg border text-[11px] leading-tight transition-all hover:shadow-lg hover:scale-[1.02] ${estadoColor[s.estado]}`}
-                                    >
-                                      <div className="flex items-center gap-1 mb-0.5">
-                                        <Sun className="h-3 w-3 opacity-40" />
-                                        <span className="font-bold">{s.hora_inicio} - {s.hora_fin}</span>
-                                      </div>
-                                      <p className="font-semibold truncate">{s.cliente?.nombre}</p>
-                                      {s.equipo && <p className="text-[10px] opacity-70 truncate">{tipoEquipoLabel[s.equipo.tipo]}</p>}
-                                    </button>
-                                  )) : amEvts.length === 0 && (
-                                    <div className="p-2 rounded-lg border border-dashed border-slate-200 text-center">
-                                      <span className="text-[10px] text-slate-300 flex items-center justify-center gap-1">
-                                        <Sun className="h-2.5 w-2.5" /> Mañana libre
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {/* PM events */}
-                                  {pmEvts.filter(e => !e.todo_el_dia).map(evt => {
-                                    const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
-                                    const Icon = cfg.icon;
-                                    return (
-                                      <div
-                                        key={`evt-${evt.id}`}
-                                        className={`w-full text-left p-2 rounded-lg border text-[11px] leading-tight ${cfg.bg} ${cfg.border} relative group`}
-                                      >
-                                        <div className="flex items-center gap-1 mb-0.5">
-                                          <Icon className={`h-3 w-3 ${cfg.color} opacity-60`} />
-                                          <span className={`font-bold ${cfg.color}`}>{evt.hora_inicio} - {evt.hora_fin}</span>
-                                        </div>
-                                        <p className="font-semibold truncate text-slate-700">{evt.titulo}</p>
-                                        <button
-                                          onClick={() => handleEliminarEvento(evt.id)}
-                                          className="absolute top-1 right-1 h-5 w-5 rounded bg-white/80 hover:bg-red-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                          <Trash2 className="h-3 w-3 text-red-400" />
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-
-                                  {/* PM services */}
-                                  {pmServs.length > 0 ? pmServs.map(s => (
-                                    <button
-                                      key={s.id}
-                                      onClick={() => setSelectedServicio(s)}
-                                      className={`w-full text-left p-2 rounded-lg border text-[11px] leading-tight transition-all hover:shadow-lg hover:scale-[1.02] ${estadoColor[s.estado]}`}
-                                    >
-                                      <div className="flex items-center gap-1 mb-0.5">
-                                        <Moon className="h-3 w-3 opacity-40" />
-                                        <span className="font-bold">{s.hora_inicio} - {s.hora_fin}</span>
-                                      </div>
-                                      <p className="font-semibold truncate">{s.cliente?.nombre}</p>
-                                      {s.equipo && <p className="text-[10px] opacity-70 truncate">{tipoEquipoLabel[s.equipo.tipo]}</p>}
-                                    </button>
-                                  )) : pmEvts.filter(e => !e.todo_el_dia).length === 0 && (
-                                    <div className="p-2 rounded-lg border border-dashed border-slate-200 text-center">
-                                      <span className="text-[10px] text-slate-300 flex items-center justify-center gap-1">
-                                        <Moon className="h-2.5 w-2.5" /> Tarde libre
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {/* Add block button */}
-                                  <button
-                                    onClick={() => openCreateModal(tec.id, day, 'bloqueo')}
-                                    className="w-full flex items-center justify-center gap-0.5 py-1 text-[10px] text-slate-300 hover:text-blue-500 transition-colors"
-                                  >
-                                    <Plus className="h-3 w-3" /> Bloquear
-                                  </button>
-                                </div>
-                              )}
-                            </td>
+                            <div key={evt.id} className={`absolute inset-x-1 top-1 bottom-1 rounded-lg border px-2 flex items-center gap-1.5 ${cfg.bg} ${cfg.border} group`}>
+                              <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
+                              <span className={`text-[10px] font-bold ${cfg.color} truncate flex-1`}>{evt.titulo}</span>
+                              <span className={`text-[10px] ${cfg.color} opacity-60`}>Todo el día</span>
+                              <button onClick={() => handleEliminarEvento(evt.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                <Trash2 className="h-3 w-3 text-red-400" />
+                              </button>
+                            </div>
                           );
                         })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+                        {/* Eventos con hora */}
+                        {evtsDia.filter(e => !e.todo_el_dia).map(evt => {
+                          const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
+                          const Icon = cfg.icon;
+                          const startH = parseHora(evt.hora_inicio, HORA_INICIO);
+                          const endH = parseHora(evt.hora_fin, startH + 1);
+                          const left = Math.max(0, (startH - HORA_INICIO) * PX_POR_HORA);
+                          const width = Math.max(40, (endH - startH) * PX_POR_HORA);
+                          return (
+                            <div
+                              key={evt.id}
+                              style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
+                              className={`rounded-lg border px-2 flex items-center gap-1 overflow-hidden ${cfg.bg} ${cfg.border} group`}
+                            >
+                              <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
+                              <div className="min-w-0 flex-1">
+                                <p className={`text-[10px] font-bold ${cfg.color} truncate`}>{evt.titulo}</p>
+                                <p className={`text-[9px] ${cfg.color} opacity-60`}>{evt.hora_inicio}–{evt.hora_fin}</p>
+                              </div>
+                              <button onClick={() => handleEliminarEvento(evt.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                <Trash2 className="h-3 w-3 text-red-400" />
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Servicios */}
+                        {servsDia.map(s => {
+                          const startH = parseHora(s.hora_inicio, 8);
+                          const endH = parseHora(s.hora_fin, startH + 1.5);
+                          const left = Math.max(0, (startH - HORA_INICIO) * PX_POR_HORA);
+                          const width = Math.max(60, (endH - startH) * PX_POR_HORA);
+                          return (
+                            <button
+                              key={s.id}
+                              style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
+                              onClick={() => setSelectedServicio(s)}
+                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${estadoColor[s.estado]}`}
+                            >
+                              <p className="text-[10px] font-bold truncate">{s.hora_inicio}–{s.hora_fin}</p>
+                              <p className="text-[11px] font-semibold truncate leading-tight">{s.cliente?.nombre}</p>
+                              {s.equipo && <p className="text-[9px] opacity-60 truncate">{tipoEquipoLabel[s.equipo.tipo]}</p>}
+                            </button>
+                          );
+                        })}
+
+                        {/* Sin nada */}
+                        {servsDia.length === 0 && evtsDia.length === 0 && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <button
+                              onClick={() => openCreateModal(tec.id, fecha, 'cita')}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-dashed border-slate-200 text-slate-300 hover:text-blue-500 hover:border-blue-300 transition-colors text-[10px] font-semibold"
+                            >
+                              <Plus className="h-3 w-3" /> Agendar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </Card>
 
-          {/* Stats cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {tecnicos.map(tec => {
-              const stats = getWeekStats(tec.id);
-              const esp = especialidadBadge[tec.especialidad] || especialidadBadge.ambos;
-              const pctOcupacion = Math.round((stats.slotsOcupados / 12) * 100);
-
-              return (
-                <Card
-                  key={tec.id}
-                  className={`p-4 cursor-pointer transition-all hover:shadow-md ${selectedTecnico === tec.id ? 'ring-2 ring-blue-500' : ''}`}
-                  onClick={() => setSelectedTecnico(selectedTecnico === tec.id ? null : tec.id)}
-                >
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs">
-                      {tec.nombre.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">{tec.nombre}</p>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${esp.cls}`}>{esp.label}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p className="text-xl font-black text-amber-600">{stats.activos}</p>
-                      <p className="text-[10px] text-slate-400">Activos</p>
-                    </div>
-                    <div>
-                      <p className="text-xl font-black text-emerald-600">{stats.completados}</p>
-                      <p className="text-[10px] text-slate-400">Hechos</p>
-                    </div>
-                    <div>
-                      <p className={`text-xl font-black ${pctOcupacion > 80 ? 'text-red-500' : pctOcupacion > 50 ? 'text-amber-500' : 'text-blue-600'}`}>{pctOcupacion}%</p>
-                      <p className="text-[10px] text-slate-400">Carga</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${pctOcupacion > 80 ? 'bg-gradient-to-r from-red-400 to-red-500' : pctOcupacion > 50 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-gradient-to-r from-blue-400 to-indigo-500'}`}
-                      style={{ width: `${Math.min(100, pctOcupacion)}%` }}
-                    />
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Legend */}
+          {/* Leyenda */}
           <div className="flex flex-wrap items-center gap-4 px-1">
             {[
               { label: 'Pendiente', color: 'bg-slate-400' },
@@ -630,14 +502,8 @@ export const CalendarioTecnicos = () => {
             ))}
             <div className="h-3 w-px bg-slate-200 mx-1" />
             <div className="flex items-center gap-1.5">
-              <Ban className="h-3 w-3 text-red-400" /> <span className="text-[11px] text-slate-500">Bloqueado</span>
-            </div>
-            <div className="h-3 w-px bg-slate-200 mx-1" />
-            <div className="flex items-center gap-1.5">
-              <Sun className="h-3 w-3 text-amber-400" /> <span className="text-[11px] text-slate-500">8:00 - 12:00</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Moon className="h-3 w-3 text-indigo-400" /> <span className="text-[11px] text-slate-500">1:00 - 5:00</span>
+              <span className="h-3 w-0.5 bg-red-400 rounded" />
+              <span className="text-[11px] text-slate-500">Hora actual</span>
             </div>
           </div>
         </>
