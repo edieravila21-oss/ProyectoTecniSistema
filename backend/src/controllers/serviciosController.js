@@ -267,6 +267,39 @@ const crear = async (req, res, next) => {
       }
     }
 
+    // Notificar al cliente con el resumen de la cita cuando es creación manual
+    if (servicio.cliente?.telefono) {
+      try {
+        const { enviarMensaje } = require('../whatsapp/bot');
+        const nombreCliente = servicio.cliente.nombre?.split(' ')[0] || 'Cliente';
+        const fecha = servicio.fecha_programada
+          ? new Date(servicio.fecha_programada).toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+          : 'Por confirmar';
+        const hora = servicio.hora_inicio
+          ? `${servicio.hora_inicio}${servicio.hora_fin ? ' — ' + servicio.hora_fin : ''}`
+          : 'Por confirmar';
+        const equipo = servicio.equipo
+          ? `${servicio.equipo.tipo === 'aire_acondicionado' ? 'Aire acondicionado' : servicio.equipo.tipo === 'nevera' ? 'Nevera' : 'Equipo'} ${servicio.equipo.marca || ''}`.trim()
+          : null;
+        const tipoServicioLabel = { diagnostico: 'Diagnóstico', mantenimiento: 'Mantenimiento', reparacion: 'Reparación', instalacion: 'Instalación' };
+        const tipoLabel = tipoServicioLabel[servicio.tipo_servicio] || 'Servicio técnico';
+        const tecnicoNombre = servicio.tecnico?.nombre;
+
+        let msgCliente = `📅 *Confirmación de cita — RefriElectri Pro*\n\nHola *${nombreCliente}*, tu cita ha sido agendada exitosamente.\n\n`;
+        msgCliente += `🔧 *Tipo:* ${tipoLabel}\n`;
+        msgCliente += `📆 *Fecha:* ${fecha}\n`;
+        msgCliente += `🕐 *Horario:* ${hora}\n`;
+        if (servicio.direccion_servicio) msgCliente += `📍 *Dirección:* ${servicio.direccion_servicio}\n`;
+        if (equipo) msgCliente += `🌡️ *Equipo:* ${equipo}\n`;
+        if (tecnicoNombre) msgCliente += `👷 *Técnico asignado:* ${tecnicoNombre}\n`;
+        msgCliente += `\nTe contactaremos si hay algún cambio. ¡Gracias por confiar en nosotros! 🙌`;
+
+        await enviarMensaje(servicio.cliente.telefono, msgCliente);
+      } catch (err) {
+        console.error('[WhatsApp] Error notificando cliente:', err.message);
+      }
+    }
+
     try { getIO().to('admin').emit('nuevo_servicio', servicio); } catch (_) {}
 
     res.status(201).json({ success: true, data: servicio });
