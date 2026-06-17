@@ -45,7 +45,7 @@ async function main() {
     }
 
     // ── SLA config ───────────────────────────────────────────────────────────
-    const { rows: slas } = await client.query('SELECT id FROM "ConfiguracionSLA" LIMIT 1');
+    const { rows: slas } = await client.query('SELECT id FROM configuracion_sla LIMIT 1');
     if (slas.length === 0) {
       const slaData = [
         ['diagnostico', 15, 30, 'Diagnóstico rápido del equipo'],
@@ -55,7 +55,7 @@ async function main() {
       ];
       for (const [tipo, camino, ejecucion, desc] of slaData) {
         await client.query(
-          `INSERT INTO "ConfiguracionSLA"
+          `INSERT INTO configuracion_sla
              (id,tipo_servicio,max_tiempo_camino_min,max_tiempo_ejecucion_min,descripcion,activo,"createdAt","updatedAt")
            VALUES (gen_random_uuid(),$1,$2,$3,$4,true,now(),now())`,
           [tipo, camino, ejecucion, desc]
