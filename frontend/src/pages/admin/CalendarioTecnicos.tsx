@@ -1082,10 +1082,10 @@ export const CalendarioTecnicos = () => {
                       <button
                         type="button"
                         onClick={() => setShowNuevoCliente(true)}
-                        className="mt-2 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        className="mt-2 w-full h-9 flex items-center justify-center gap-1.5 text-xs font-semibold text-blue-600 border border-dashed border-blue-300 rounded-xl hover:bg-blue-50 hover:border-blue-400 transition-colors"
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        Nuevo cliente
+                        Crear nuevo cliente
                       </button>
                     ) : (
                       <div className="mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50 space-y-2">
