@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getServicios, crearServicio, cambiarEstadoServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
-import { getClientes, getEquipos } from '@/api/clientes';
+import { getClientes, getEquipos, crearCliente } from '@/api/clientes';
 import {
   getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
   eliminarEventoCalendario, crearEventosCalendarioBulk,
@@ -119,6 +119,9 @@ export const CalendarioTecnicos = () => {
   // Cita form state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
+  const [showNuevoCliente, setShowNuevoCliente] = useState(false);
+  const [savingCliente, setSavingCliente] = useState(false);
+  const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', telefono: '', direccion_principal: '' });
   const [citaForm, setCitaForm] = useState({
     clienteId: '', equipoId: '', tecnicoId: '',
     tipo_servicio: '', descripcion_falla: '',
@@ -266,6 +269,27 @@ export const CalendarioTecnicos = () => {
         const cliente = clientes.find(c => c.id === clienteId);
         if (cliente?.direccion_principal) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion_principal || '' }));
       } catch { setEquipos([]); }
+    }
+  };
+
+  const handleCrearClienteRapido = async () => {
+    if (!nuevoClienteForm.nombre.trim()) { toast.error('Escribe el nombre del cliente'); return; }
+    if (!nuevoClienteForm.telefono.trim()) { toast.error('Escribe el teléfono'); return; }
+    setSavingCliente(true);
+    try {
+      const { data: res } = await crearCliente(nuevoClienteForm);
+      const nuevo = res.data;
+      // Refrescar lista y seleccionar el nuevo cliente automáticamente
+      const { data: lista } = await getClientes({});
+      setClientes(lista.data);
+      await handleClienteCitaChange(nuevo.id);
+      setNuevoClienteForm({ nombre: '', telefono: '', direccion_principal: '' });
+      setShowNuevoCliente(false);
+      toast.success(`Cliente ${nuevo.nombre} creado`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Error creando cliente');
+    } finally {
+      setSavingCliente(false);
     }
   };
 
@@ -1052,6 +1076,60 @@ export const CalendarioTecnicos = () => {
                       <option value="">Seleccionar cliente</option>
                       {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} — {c.telefono}</option>)}
                     </select>
+
+                    {/* Acceso rápido para crear cliente */}
+                    {!showNuevoCliente ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowNuevoCliente(true)}
+                        className="mt-2 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Nuevo cliente
+                      </button>
+                    ) : (
+                      <div className="mt-3 p-3 rounded-xl border border-blue-200 bg-blue-50 space-y-2">
+                        <p className="text-xs font-semibold text-blue-700 mb-1">Nuevo cliente</p>
+                        <input
+                          type="text"
+                          placeholder="Nombre *"
+                          value={nuevoClienteForm.nombre}
+                          onChange={e => setNuevoClienteForm(f => ({ ...f, nombre: e.target.value }))}
+                          className="w-full h-9 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                        <input
+                          type="tel"
+                          placeholder="Teléfono *"
+                          value={nuevoClienteForm.telefono}
+                          onChange={e => setNuevoClienteForm(f => ({ ...f, telefono: e.target.value }))}
+                          className="w-full h-9 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Dirección (opcional)"
+                          value={nuevoClienteForm.direccion_principal}
+                          onChange={e => setNuevoClienteForm(f => ({ ...f, direccion_principal: e.target.value }))}
+                          className="w-full h-9 px-3 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleCrearClienteRapido}
+                            disabled={savingCliente}
+                            className="flex-1 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white transition-colors disabled:opacity-50"
+                          >
+                            {savingCliente ? 'Guardando…' : 'Crear cliente'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setShowNuevoCliente(false); setNuevoClienteForm({ nombre: '', telefono: '', direccion_principal: '' }); }}
+                            className="h-8 px-3 rounded-lg border border-slate-300 text-xs text-slate-600 hover:bg-slate-100 transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {equipos.length > 0 && (
