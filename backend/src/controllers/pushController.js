@@ -6,6 +6,11 @@ const suscribir = async (req, res, next) => {
     if (!endpoint || !keys?.p256dh || !keys?.auth) {
       return res.status(400).json({ success: false, error: 'Suscripción inválida' });
     }
+    // Verificar que el usuario del token existe antes de guardar
+    const usuario = await prisma.usuario.findUnique({ where: { id: req.usuario.id }, select: { id: true } });
+    if (!usuario) {
+      return res.status(401).json({ success: false, error: 'Sesión expirada, vuelve a iniciar sesión', code: 'SESSION_EXPIRED' });
+    }
     await prisma.pushSubscription.upsert({
       where: { endpoint },
       update: { usuarioId: req.usuario.id, p256dh: keys.p256dh, auth: keys.auth },
