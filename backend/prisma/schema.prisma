@@ -415,3 +415,29 @@ model ConfiguracionSLA {
 
   @@map("configuracion_sla")
 }
+
+model CatalogoServicio {
+  id           String                  @id @default(uuid())
+  nombre       String
+  descripcion  String?
+  clave        String?                 @unique
+  duracion_min Int                     @default(60)
+  activo       Boolean                 @default(true)
+  items        CatalogoChecklistItem[]
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  @@map("catalogo_servicios")
+}
+
+model CatalogoChecklistItem {
+  id          String             @id @default(uuid())
+  catalogoId  String
+  categoria   CategoriaChecklist
+  descripcion String
+  orden       Int                @default(0)
+
+  catalogo    CatalogoServicio   @relation(fields: [catalogoId], references: [id], onDelete: Cascade)
+
+  @@map("catalogo_checklist_items")
+}

@@ -8,7 +8,7 @@ import {
   LayoutGrid, Briefcase, UsersRound,
   HardHat, MessageCircleMore, ChartNoAxesCombined,
   SlidersHorizontal, LogOut, Menu, X, Bell, Zap,
-  ClipboardCheck, CalendarClock,
+  ClipboardCheck, CalendarClock, BookOpen,
 } from 'lucide-react';
 
 const navItems = [
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/admin/clientes', icon: UsersRound, label: 'Clientes' },
   { to: '/admin/tecnicos', icon: HardHat, label: 'Técnicos' },
   { to: '/admin/calendario', icon: CalendarClock, label: 'Calendario' },
+  { to: '/admin/catalogo', icon: BookOpen, label: 'Catálogo' },
   { to: '/admin/entrevistas', icon: ClipboardCheck, label: 'Entrevistas' },
   { to: '/admin/whatsapp', icon: MessageCircleMore, label: 'WhatsApp' },
   { to: '/admin/metricas', icon: ChartNoAxesCombined, label: 'Métricas' },

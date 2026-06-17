@@ -20,6 +20,7 @@ import { Metricas } from '@/pages/admin/Metricas';
 import { Entrevistas } from '@/pages/admin/Entrevistas';
 import { CalendarioTecnicos } from '@/pages/admin/CalendarioTecnicos';
 import { Configuracion } from '@/pages/admin/Configuracion';
+import { CatalogoServicios } from '@/pages/admin/CatalogoServicios';
 
 import { AgendaTecnico } from '@/pages/tecnico/AgendaTecnico';
 import { CalendarioTecnico } from '@/pages/tecnico/CalendarioTecnico';
@@ -70,6 +71,7 @@ const AppContent = () => {
         <Route path="metricas" element={<Metricas />} />
         <Route path="entrevistas" element={<Entrevistas />} />
         <Route path="configuracion" element={<Configuracion />} />
+        <Route path="catalogo" element={<CatalogoServicios />} />
       </Route>
 
       <Route path="/tecnico" element={<ProtectedRoute roles={['tecnico']}><TecnicoLayout /></ProtectedRoute>}>
