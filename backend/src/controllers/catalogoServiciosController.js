@@ -135,4 +135,72 @@ const reemplazarItems = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { listar, obtener, crear, actualizar, eliminar, agregarItem, actualizarItem, eliminarItem, reemplazarItems };
+// Carga los servicios predefinidos del checklistService al catálogo
+const seedPredefinidos = async (req, res, next) => {
+  try {
+    const { getChecklistPorTipo } = require('../services/checklistService');
+
+    const serviciosPredefinidos = [
+      // Aires Split
+      { clave: 'aire_acondicionado:mantenimiento', nombre: 'Mantenimiento Aire Acondicionado Split',     duracion_min: 90  },
+      { clave: 'aire_acondicionado:reparacion',    nombre: 'Reparación Aire Acondicionado Split',        duracion_min: 120 },
+      { clave: 'aire_acondicionado:instalacion',   nombre: 'Instalación Aire Acondicionado Split',       duracion_min: 180 },
+      // Aires Portátil
+      { clave: 'aire_portatil:mantenimiento',      nombre: 'Mantenimiento Aire Portátil',                duracion_min: 60  },
+      { clave: 'aire_portatil:reparacion',         nombre: 'Reparación Aire Portátil',                   duracion_min: 90  },
+      // Aires Ventana
+      { clave: 'aire_ventana:mantenimiento',       nombre: 'Mantenimiento Aire Acondicionado Ventana',   duracion_min: 60  },
+      { clave: 'aire_ventana:reparacion',          nombre: 'Reparación Aire Acondicionado Ventana',      duracion_min: 90  },
+      // Compresor
+      { clave: 'compresor:instalacion',            nombre: 'Instalación / Cambio de Compresor',          duracion_min: 180 },
+      // Neveras
+      { clave: 'nevera_no_frost:reparacion',       nombre: 'Reparación Nevera No Frost',                 duracion_min: 120 },
+      { clave: 'nevera_escarcha:reparacion',       nombre: 'Reparación Nevera de Escarcha',              duracion_min: 120 },
+      { clave: 'nevera_inverter:reparacion',       nombre: 'Reparación Nevera Inverter',                 duracion_min: 120 },
+      { clave: 'nevera:mantenimiento',             nombre: 'Mantenimiento Nevera',                       duracion_min: 60  },
+      { clave: 'nevera:instalacion',               nombre: 'Instalación Circuito Eléctrico Nevera',      duracion_min: 90  },
+      // Otros
+      { clave: 'congelador:reparacion',            nombre: 'Reparación Congelador',                      duracion_min: 120 },
+      { clave: 'exhibidora:reparacion',            nombre: 'Servicio Exhibidora Refrigerada',            duracion_min: 120 },
+      { clave: 'cuarto_frio:reparacion',           nombre: 'Servicio Cuarto Frío',                       duracion_min: 180 },
+      // Diagnóstico genérico
+      { clave: 'diagnostico',                      nombre: 'Visita de Diagnóstico',                      duracion_min: 60  },
+    ];
+
+    let creados = 0;
+    let omitidos = 0;
+
+    for (const def of serviciosPredefinidos) {
+      // No duplicar si ya existe esa clave
+      const existe = await prisma.catalogoServicio.findUnique({ where: { clave: def.clave } });
+      if (existe) { omitidos++; continue; }
+
+      // Extraer tipoEquipo y tipoServicio de la clave
+      const [tipoEquipo, tipoServicio] = def.clave.includes(':')
+        ? def.clave.split(':')
+        : ['generico', def.clave];
+
+      const items = getChecklistPorTipo(tipoEquipo, tipoServicio);
+
+      await prisma.catalogoServicio.create({
+        data: {
+          nombre: def.nombre,
+          clave: def.clave,
+          duracion_min: def.duracion_min,
+          items: {
+            create: items.map(it => ({
+              categoria: it.categoria,
+              descripcion: it.descripcion,
+              orden: it.orden,
+            })),
+          },
+        },
+      });
+      creados++;
+    }
+
+    res.json({ success: true, data: { creados, omitidos } });
+  } catch (error) { next(error); }
+};
+
+module.exports = { listar, obtener, crear, actualizar, eliminar, agregarItem, actualizarItem, eliminarItem, reemplazarItems, seedPredefinidos };

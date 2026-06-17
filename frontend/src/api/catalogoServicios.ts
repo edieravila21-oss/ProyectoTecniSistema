@@ -38,3 +38,6 @@ export const eliminarCatalogo = (id: string) =>
 
 export const reemplazarItemsCatalogo = (id: string, items: Partial<CatalogoChecklistItem>[]) =>
   api.put<ApiResponse<CatalogoServicio>>(`/catalogo-servicios/${id}/items`, { items });
+
+export const seedCatalogoPredefinidos = () =>
+  api.post<ApiResponse<{ creados: number; omitidos: number }>>('/catalogo-servicios/seed');

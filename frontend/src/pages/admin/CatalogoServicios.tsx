@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  getCatalogos, crearCatalogo, actualizarCatalogo, eliminarCatalogo, reemplazarItemsCatalogo,
+  getCatalogos, crearCatalogo, actualizarCatalogo, eliminarCatalogo, reemplazarItemsCatalogo, seedCatalogoPredefinidos,
   type CatalogoServicio, type CatalogoChecklistItem,
 } from '@/api/catalogoServicios';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,19 @@ export const CatalogoServicios = () => {
   const [itemsDraft, setItemsDraft] = useState<ItemDraft[]>([]);
   const [nuevaDesc, setNuevaDesc] = useState('');
   const [nuevaCat, setNuevaCat] = useState<Categoria>('diagnostico');
+
+  const [seeding, setSeeding] = useState(false);
+
+  const handleSeed = async () => {
+    if (!confirm('¿Importar los 17 servicios predefinidos? Los que ya existen no se duplicarán.')) return;
+    setSeeding(true);
+    try {
+      const { data: res } = await seedCatalogoPredefinidos();
+      toast.success(`${res.data.creados} servicios importados${res.data.omitidos ? `, ${res.data.omitidos} ya existían` : ''}`);
+      fetchCatalogos();
+    } catch { toast.error('Error importando servicios'); }
+    finally { setSeeding(false); }
+  };
 
   const fetchCatalogos = async () => {
     setLoading(true);
@@ -145,9 +158,14 @@ export const CatalogoServicios = () => {
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">Catálogo de Servicios</h1>
           <p className="text-sm text-slate-400 mt-0.5">Tipos de servicio, duración y checklist de cada uno</p>
         </div>
-        <Button onClick={openNuevo} className="rounded-xl gap-1.5">
-          <Plus className="h-4 w-4" /> Nuevo servicio
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleSeed} disabled={seeding} className="rounded-xl gap-1.5 text-slate-600">
+            {seeding ? 'Importando…' : '↓ Importar predefinidos'}
+          </Button>
+          <Button onClick={openNuevo} className="rounded-xl gap-1.5">
+            <Plus className="h-4 w-4" /> Nuevo servicio
+          </Button>
+        </div>
       </div>
 
       <div className={`grid gap-6 ${isEditorOpen ? 'lg:grid-cols-2' : ''}`}>
