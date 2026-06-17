@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getServicios, crearServicio } from '@/api/servicios';
+import { getServicios, crearServicio, cambiarEstadoServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos } from '@/api/clientes';
 import { getEventosCalendario, crearEventoCalendario, eliminarEventoCalendario } from '@/api/calendario';
@@ -12,12 +12,12 @@ import { tipoEquipoLabel } from '@/utils/helpers';
 import type { Servicio, Usuario, EventoCalendario, Cliente, Equipo } from '@/types';
 import {
   ChevronLeft, ChevronRight, X, Users, Calendar, MapPin,
-  Phone, Wrench, Sun, Moon, Clock, AlertTriangle, Plus,
+  Phone, Wrench, Clock, AlertTriangle, Plus,
   Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff, Trash2,
-  CheckCircle2, CalendarPlus, Plus as PlusIcon,
+  CheckCircle2, CalendarPlus, Repeat,
 } from 'lucide-react';
 import {
-  format, addDays, isSameDay, isToday,
+  format, addDays, addMonths, isSameDay, isToday,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -58,6 +58,7 @@ export const CalendarioTecnicos = () => {
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>('bloqueo');
   const [saving, setSaving] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
 
   // Cita form state
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -88,6 +89,8 @@ export const CalendarioTecnicos = () => {
     hora_fin: '09:00',
     tipo: 'personal',
     todo_el_dia: false,
+    repeticion: 'ninguna',
+    todos_tecnicos: false,
   });
 
   const fetchData = async () => {
@@ -171,6 +174,8 @@ export const CalendarioTecnicos = () => {
       hora_fin: '09:00',
       tipo: 'personal',
       todo_el_dia: false,
+      repeticion: 'ninguna',
+      todos_tecnicos: false,
     });
     setCitaForm(f => ({ ...f, tecnicoId: tecnicoId || '', fecha_programada: fechaStr }));
     if (mode === 'cita') {
@@ -215,23 +220,33 @@ export const CalendarioTecnicos = () => {
 
   const handleCrear = async () => {
     if (!form.titulo.trim()) { toast.error('Escribe un título'); return; }
-    if (!form.tecnicoId) { toast.error('Selecciona un técnico'); return; }
+    if (!form.tecnicoId && !form.todos_tecnicos) { toast.error('Selecciona un técnico'); return; }
     setSaving(true);
     try {
-      await crearEventoCalendario({
-        tecnicoId: form.tecnicoId,
-        titulo: form.titulo.trim(),
-        descripcion: form.descripcion.trim() || undefined,
-        fecha: form.fecha,
-        hora_inicio: form.todo_el_dia ? '00:00' : form.hora_inicio,
-        hora_fin: form.todo_el_dia ? '23:59' : form.hora_fin,
-        tipo: form.tipo as any,
-        todo_el_dia: form.todo_el_dia,
-      });
-      toast.success('Evento creado');
+      const fechas = form.repeticion === 'ninguna'
+        ? [form.fecha]
+        : getDiasLaborales(form.fecha, getHastaFecha(form.fecha, form.repeticion));
+      const tecIds = form.todos_tecnicos ? tecnicos.map(t => t.id) : [form.tecnicoId];
+      let count = 0;
+      for (const tecId of tecIds) {
+        for (const f of fechas) {
+          await crearEventoCalendario({
+            tecnicoId: tecId,
+            titulo: form.titulo.trim(),
+            descripcion: form.descripcion.trim() || undefined,
+            fecha: f,
+            hora_inicio: form.todo_el_dia ? '00:00' : form.hora_inicio,
+            hora_fin: form.todo_el_dia ? '23:59' : form.hora_fin,
+            tipo: form.tipo as any,
+            todo_el_dia: form.todo_el_dia,
+          });
+          count++;
+        }
+      }
+      toast.success(count > 1 ? `${count} eventos creados` : 'Evento creado');
       setShowModal(false);
       fetchData();
-    } catch { toast.error('Error creando evento'); }
+    } catch { toast.error('Error creando eventos'); }
     finally { setSaving(false); }
   };
 
@@ -241,6 +256,42 @@ export const CalendarioTecnicos = () => {
       toast.success('Evento eliminado');
       fetchData();
     } catch { toast.error('Error eliminando evento'); }
+  };
+
+  const getDiasLaborales = (desde: string, hasta: string): string[] => {
+    const dias: string[] = [];
+    let cur = new Date(desde + 'T00:00:00');
+    const end = new Date(hasta + 'T00:00:00');
+    while (cur <= end) {
+      const d = cur.getDay();
+      if (d >= 1 && d <= 5) dias.push(format(cur, 'yyyy-MM-dd'));
+      cur = addDays(cur, 1);
+    }
+    return dias;
+  };
+
+  const getHastaFecha = (desde: string, rep: string): string => {
+    const d = new Date(desde + 'T00:00:00');
+    if (rep === 'semana') {
+      const dow = d.getDay();
+      return format(addDays(d, dow <= 5 ? 5 - dow : 6), 'yyyy-MM-dd');
+    }
+    if (rep === 'quincena') return format(addDays(d, 13), 'yyyy-MM-dd');
+    if (rep === 'mes') return format(addMonths(d, 1), 'yyyy-MM-dd');
+    return desde;
+  };
+
+  const handleCancelarServicio = async () => {
+    if (!selectedServicio) return;
+    try {
+      await cambiarEstadoServicio(selectedServicio.id, 'cancelado');
+      toast.success('Servicio cancelado');
+      setSelectedServicio(null);
+      setCancelConfirm(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Error cancelando servicio');
+    }
   };
 
   return (
@@ -512,7 +563,7 @@ export const CalendarioTecnicos = () => {
       {/* Service detail slide-over */}
       {selectedServicio && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setSelectedServicio(null)} />
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => { setSelectedServicio(null); setCancelConfirm(false); }} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-slate-800 text-lg">Detalle del Servicio</h3>
@@ -620,6 +671,39 @@ export const CalendarioTecnicos = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Cancelar servicio */}
+                {['pendiente', 'asignado', 'en_camino', 'en_servicio'].includes(selectedServicio.estado) && (
+                  <div className="border border-red-100 bg-red-50/40 rounded-xl p-4">
+                    {!cancelConfirm ? (
+                      <button
+                        onClick={() => setCancelConfirm(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 hover:border-red-300 transition-colors"
+                      >
+                        <Ban className="h-4 w-4" /> Cancelar servicio
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm font-semibold text-red-700">¿Confirmar cancelación?</p>
+                        <p className="text-xs text-red-400">Esta acción no se puede deshacer.</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setCancelConfirm(false)}
+                            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                          >
+                            Volver
+                          </button>
+                          <button
+                            onClick={handleCancelarServicio}
+                            className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
+                          >
+                            Sí, cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -805,11 +889,22 @@ export const CalendarioTecnicos = () => {
                 <div className="p-5 space-y-4">
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Técnico</label>
-                    <select value={form.tecnicoId}
-                      onChange={e => setForm(f => ({ ...f, tecnicoId: e.target.value }))}
-                      className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                      {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                    </select>
+                    {!form.todos_tecnicos && (
+                      <select value={form.tecnicoId}
+                        onChange={e => setForm(f => ({ ...f, tecnicoId: e.target.value }))}
+                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2">
+                        {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                      </select>
+                    )}
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <div
+                        className={`relative w-11 h-6 rounded-full transition-colors ${form.todos_tecnicos ? 'bg-blue-600' : 'bg-slate-200'}`}
+                        onClick={() => setForm(f => ({ ...f, todos_tecnicos: !f.todos_tecnicos }))}
+                      >
+                        <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.todos_tecnicos ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                      </div>
+                      <span className="text-sm font-medium text-slate-700">Aplicar a todos los técnicos</span>
+                    </label>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-2 block">Tipo de evento</label>
@@ -818,7 +913,16 @@ export const CalendarioTecnicos = () => {
                         const Icon = cfg.icon;
                         const selected = form.tipo === key;
                         return (
-                          <button key={key} onClick={() => setForm(f => ({ ...f, tipo: key }))}
+                          <button key={key} onClick={() => {
+                            const upd: Partial<typeof form> = { tipo: key };
+                            if (key === 'almuerzo') {
+                              upd.hora_inicio = '12:30';
+                              upd.hora_fin = '13:00';
+                              upd.todo_el_dia = false;
+                              if (!form.titulo || form.titulo === 'Hora de almuerzo') upd.titulo = 'Hora de almuerzo';
+                            }
+                            setForm(f => ({ ...f, ...upd }));
+                          }}
                             className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${selected ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:border-slate-200'}`}>
                             <Icon className={`h-5 w-5 ${selected ? 'text-blue-600' : cfg.color}`} />
                             <span className={`text-[10px] font-semibold ${selected ? 'text-blue-700' : 'text-slate-500'}`}>{cfg.label}</span>
@@ -846,6 +950,37 @@ export const CalendarioTecnicos = () => {
                     <input type="date" value={form.fecha}
                       onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
                       className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-2 block">Repetir</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {([
+                        { key: 'ninguna', label: 'Solo hoy' },
+                        { key: 'semana', label: 'Esta semana' },
+                        { key: 'quincena', label: '2 semanas' },
+                        { key: 'mes', label: '1 mes' },
+                      ] as const).map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, repeticion: key }))}
+                          className={`py-2 px-1 rounded-xl text-[10px] font-semibold border-2 transition-all ${
+                            form.repeticion === key
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-slate-100 text-slate-500 hover:border-slate-200'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {form.repeticion !== 'ninguna' && (
+                      <p className="text-[11px] text-blue-600 mt-1.5 flex items-center gap-1">
+                        <Repeat className="h-3 w-3 shrink-0" />
+                        Solo días laborales Lun–Vie
+                        {form.todos_tecnicos && tecnicos.length > 0 ? ` · ${tecnicos.length} técnicos` : ''}
+                      </p>
+                    )}
                   </div>
                   <label className="flex items-center gap-3 cursor-pointer">
                     <div className={`relative w-11 h-6 rounded-full transition-colors ${form.todo_el_dia ? 'bg-blue-600' : 'bg-slate-200'}`}
