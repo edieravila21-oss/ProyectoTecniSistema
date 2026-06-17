@@ -226,13 +226,6 @@ const crear = async (req, res, next) => {
         checklist: {
           create: checklistItems,
         },
-        eventos: {
-          create: {
-            tipo: 'creado',
-            descripcion: 'Servicio creado',
-            usuarioId: req.usuario?.id ?? null,
-          },
-        },
       },
       include: {
         cliente: true,
@@ -243,15 +236,33 @@ const crear = async (req, res, next) => {
       },
     });
 
-    if (tecnicoId) {
+    // Log de evento separado para que un FK inválido no impida guardar el servicio
+    try {
       await prisma.eventoServicio.create({
         data: {
           servicioId: servicio.id,
-          tipo: 'asignado',
-          descripcion: `Servicio asignado a ${servicio.tecnico?.nombre || 'técnico'}`,
+          tipo: 'creado',
+          descripcion: 'Servicio creado',
           usuarioId: req.usuario?.id ?? null,
         },
       });
+    } catch (evErr) {
+      console.error('[EventoServicio] No se pudo crear evento "creado":', evErr.message);
+    }
+
+    if (tecnicoId) {
+      try {
+        await prisma.eventoServicio.create({
+          data: {
+            servicioId: servicio.id,
+            tipo: 'asignado',
+            descripcion: `Servicio asignado a ${servicio.tecnico?.nombre || 'técnico'}`,
+            usuarioId: req.usuario?.id ?? null,
+          },
+        });
+      } catch (evErr) {
+        console.error('[EventoServicio] No se pudo crear evento "asignado":', evErr.message);
+      }
 
       const tecnicoData = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
       if (tecnicoData?.telefono) {
