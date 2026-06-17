@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getClientes, getCliente, crearCliente, actualizarCliente, crearEquipo } from '@/api/clientes';
+import { getClientes, getCliente, crearCliente, actualizarCliente, crearEquipo, agregarDireccion, actualizarDireccion, eliminarDireccion } from '@/api/clientes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -10,10 +10,10 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { toast } from '@/components/shared/Toast';
 import { formatDate, formatCurrency, tipoEquipoLabel } from '@/utils/helpers';
-import type { Cliente, Equipo } from '@/types';
+import type { Cliente, Equipo, DireccionCliente } from '@/types';
 import {
   Search, Plus, X, Phone, Mail, MapPin, ArrowLeft,
-  Pencil, Check, Wrench, Calendar, User, ClipboardList,
+  Pencil, Check, Wrench, Calendar, User, ClipboardList, Star,
 } from 'lucide-react';
 
 
@@ -40,6 +40,9 @@ export const Clientes = () => {
   );
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [showDirForm, setShowDirForm] = useState(false);
+  const [editingDir, setEditingDir] = useState<DireccionCliente | null>(null);
+  const [dirForm, setDirForm] = useState({ nombre: '', direccion: '', principal: false });
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -118,6 +121,41 @@ export const Clientes = () => {
       setEquipoForm({ tipo: 'nevera', marca: '', modelo: '', serial: '' });
       openDetail(selected.id);
     } catch { toast.error('Error agregando equipo'); }
+  };
+
+  const handleGuardarDireccion = async () => {
+    if (!selected) return;
+    if (!dirForm.nombre.trim() || !dirForm.direccion.trim()) {
+      toast.error('Nombre y dirección son requeridos'); return;
+    }
+    try {
+      if (editingDir) {
+        await actualizarDireccion(selected.id, editingDir.id, dirForm);
+        toast.success('Dirección actualizada');
+      } else {
+        await agregarDireccion(selected.id, dirForm);
+        toast.success('Dirección agregada');
+      }
+      setShowDirForm(false);
+      setEditingDir(null);
+      setDirForm({ nombre: '', direccion: '', principal: false });
+      openDetail(selected.id);
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Error guardando dirección'); }
+  };
+
+  const handleEliminarDireccion = async (dirId: string) => {
+    if (!selected || !confirm('¿Eliminar esta dirección?')) return;
+    try {
+      await eliminarDireccion(selected.id, dirId);
+      toast.success('Dirección eliminada');
+      openDetail(selected.id);
+    } catch { toast.error('Error eliminando dirección'); }
+  };
+
+  const startEditDir = (dir: DireccionCliente) => {
+    setEditingDir(dir);
+    setDirForm({ nombre: dir.nombre, direccion: dir.direccion, principal: dir.principal });
+    setShowDirForm(true);
   };
 
   // ── Detail view ──────────────────────────────────────────────
@@ -260,6 +298,77 @@ export const Clientes = () => {
                 {!selected.equipos?.length && (
                   <div className="text-center py-6">
                     <p className="text-sm text-slate-400">Sin equipos registrados</p>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* Direcciones */}
+            <Card className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-800">Direcciones ({selected.direcciones?.length || 0})</h3>
+                <Button size="sm" className="rounded-xl" onClick={() => { setShowDirForm(true); setEditingDir(null); setDirForm({ nombre: '', direccion: '', principal: false }); }}>
+                  <Plus className="h-3 w-3 mr-1" /> Agregar
+                </Button>
+              </div>
+
+              {showDirForm && (
+                <div className="mb-4 p-4 bg-slate-50 rounded-xl space-y-3">
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1 block">Etiqueta *</label>
+                      <Input placeholder="Casa, Oficina, Local..." value={dirForm.nombre} onChange={e => setDirForm(f => ({ ...f, nombre: e.target.value }))} className="rounded-xl" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1 block">Dirección *</label>
+                      <Input placeholder="Calle 10 #5-23..." value={dirForm.direccion} onChange={e => setDirForm(f => ({ ...f, direccion: e.target.value }))} className="rounded-xl" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={dirForm.principal} onChange={e => setDirForm(f => ({ ...f, principal: e.target.checked }))} className="rounded" />
+                    <span className="text-xs text-slate-600 font-medium">Marcar como dirección principal</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="rounded-xl" onClick={handleGuardarDireccion}>
+                      <Check className="h-3.5 w-3.5 mr-1" /> {editingDir ? 'Actualizar' : 'Guardar'}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="rounded-xl" onClick={() => { setShowDirForm(false); setEditingDir(null); }}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {selected.direcciones?.map((dir: DireccionCliente) => (
+                  <div key={dir.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${dir.principal ? 'border-blue-200 bg-blue-50/50' : 'border-slate-100 hover:bg-slate-50/50'}`}>
+                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${dir.principal ? 'bg-blue-100' : 'bg-slate-100'}`}>
+                      <MapPin className={`h-3.5 w-3.5 ${dir.principal ? 'text-blue-600' : 'text-slate-500'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-700">{dir.nombre}</p>
+                        {dir.principal && (
+                          <span className="flex items-center gap-0.5 text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-lg">
+                            <Star className="h-2.5 w-2.5" /> Principal
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">{dir.direccion}</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => startEditDir(dir)} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-colors">
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => handleEliminarDireccion(dir.id)} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!selected.direcciones?.length && (
+                  <div className="text-center py-6">
+                    <p className="text-sm text-slate-400">Sin direcciones registradas</p>
                   </div>
                 )}
               </div>

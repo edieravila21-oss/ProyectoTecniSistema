@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getServicios, crearServicio, cambiarEstadoServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
-import { getClientes, getEquipos, crearCliente } from '@/api/clientes';
+import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
 import {
   getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
@@ -124,6 +124,7 @@ export const CalendarioTecnicos = () => {
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
   const [savingCliente, setSavingCliente] = useState(false);
   const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', telefono: '', direccion_principal: '' });
+  const [clienteDirecciones, setClienteDirecciones] = useState<{ id: string; nombre: string; direccion: string; principal: boolean }[]>([]);
   const [citaForm, setCitaForm] = useState({
     clienteId: '', equipoId: '', tecnicoId: '',
     tipo_servicio: '', descripcion_falla: '',
@@ -268,13 +269,26 @@ export const CalendarioTecnicos = () => {
   };
 
   const handleClienteCitaChange = async (clienteId: string) => {
-    setCitaForm(f => ({ ...f, clienteId, equipoId: '' }));
+    setCitaForm(f => ({ ...f, clienteId, equipoId: '', direccion_servicio: '' }));
+    setClienteDirecciones([]);
     if (clienteId) {
       try {
-        const { data: res } = await getEquipos(clienteId);
-        setEquipos(res.data);
-        const cliente = clientes.find(c => c.id === clienteId);
-        if (cliente?.direccion_principal) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion_principal || '' }));
+        const [equiposRes, dirsRes] = await Promise.all([
+          getEquipos(clienteId),
+          getDirecciones(clienteId),
+        ]);
+        setEquipos(equiposRes.data.data);
+        const dirs = dirsRes.data.data;
+        setClienteDirecciones(dirs);
+        // Auto-fill si hay exactamente una dirección o hay una marcada como principal
+        const principal = dirs.find(d => d.principal) || dirs[0];
+        if (principal) {
+          setCitaForm(f => ({ ...f, clienteId, direccion_servicio: principal.direccion }));
+        } else {
+          // Fallback a direccion_principal del cliente
+          const cliente = clientes.find(c => c.id === clienteId);
+          if (cliente?.direccion_principal) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion_principal || '' }));
+        }
       } catch { setEquipos([]); }
     }
   };
@@ -1180,10 +1194,31 @@ export const CalendarioTecnicos = () => {
 
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Dirección del servicio</label>
-                    <input type="text" value={citaForm.direccion_servicio}
-                      onChange={e => setCitaForm(f => ({ ...f, direccion_servicio: e.target.value }))}
-                      placeholder="Dirección donde se realizará el servicio"
-                      className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    {clienteDirecciones.length > 1 ? (
+                      <>
+                        <select
+                          value={citaForm.direccion_servicio}
+                          onChange={e => setCitaForm(f => ({ ...f, direccion_servicio: e.target.value }))}
+                          className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2"
+                        >
+                          <option value="">Seleccionar dirección</option>
+                          {clienteDirecciones.map(d => (
+                            <option key={d.id} value={d.direccion}>
+                              {d.nombre}{d.principal ? ' ★' : ''} — {d.direccion}
+                            </option>
+                          ))}
+                        </select>
+                        <input type="text" value={citaForm.direccion_servicio}
+                          onChange={e => setCitaForm(f => ({ ...f, direccion_servicio: e.target.value }))}
+                          placeholder="O escribe una dirección diferente"
+                          className="w-full h-9 px-4 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </>
+                    ) : (
+                      <input type="text" value={citaForm.direccion_servicio}
+                        onChange={e => setCitaForm(f => ({ ...f, direccion_servicio: e.target.value }))}
+                        placeholder="Dirección donde se realizará el servicio"
+                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    )}
                   </div>
 
                   <div>

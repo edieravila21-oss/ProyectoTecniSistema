@@ -1,5 +1,5 @@
 import api from './client';
-import type { ApiResponse, Cliente, Equipo } from '@/types';
+import type { ApiResponse, Cliente, Equipo, DireccionCliente } from '@/types';
 
 export const getClientes = (params?: Record<string, string>) =>
   api.get<ApiResponse<Cliente[]>>('/clientes', { params });
@@ -21,3 +21,15 @@ export const crearEquipo = (clienteId: string, data: Partial<Equipo>) =>
 
 export const getHistorialCliente = (clienteId: string) =>
   api.get<ApiResponse<any>>(`/clientes/${clienteId}/historial`);
+
+export const getDirecciones = (clienteId: string) =>
+  api.get<ApiResponse<DireccionCliente[]>>(`/clientes/${clienteId}/direcciones`);
+
+export const agregarDireccion = (clienteId: string, data: Partial<DireccionCliente>) =>
+  api.post<ApiResponse<DireccionCliente>>(`/clientes/${clienteId}/direcciones`, data);
+
+export const actualizarDireccion = (clienteId: string, dirId: string, data: Partial<DireccionCliente>) =>
+  api.put<ApiResponse<DireccionCliente>>(`/clientes/${clienteId}/direcciones/${dirId}`, data);
+
+export const eliminarDireccion = (clienteId: string, dirId: string) =>
+  api.delete<ApiResponse<void>>(`/clientes/${clienteId}/direcciones/${dirId}`);

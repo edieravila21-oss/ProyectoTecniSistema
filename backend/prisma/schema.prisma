@@ -165,8 +165,21 @@ model Cliente {
   mensajes           MensajeWhatsApp[]
   recordatorios      RecordatorioMantenimiento[]
   conversaciones     ConversacionWhatsApp[]
+  direcciones        DireccionCliente[]
 
   @@map("clientes")
+}
+
+model DireccionCliente {
+  id        String  @id @default(uuid())
+  clienteId String
+  nombre    String
+  direccion String
+  principal Boolean @default(false)
+
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@map("direcciones_cliente")
 }
 
 model Equipo {

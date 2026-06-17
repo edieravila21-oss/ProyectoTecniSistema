@@ -46,6 +46,7 @@ const obtener = async (req, res, next) => {
       where: { id: req.params.id },
       include: {
         equipos: true,
+        direcciones: { orderBy: [{ principal: 'desc' }, { id: 'asc' }] },
         servicios: {
           include: { tecnico: { select: { id: true, nombre: true } }, equipo: true },
           orderBy: { createdAt: 'desc' },
@@ -206,4 +207,60 @@ const historialCliente = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, obtener, crear, actualizar, listarEquipos, crearEquipo, historialCliente };
+// ── Direcciones ────────────────────────────────────────────────
+
+const listarDirecciones = async (req, res, next) => {
+  try {
+    const dirs = await prisma.direccionCliente.findMany({
+      where: { clienteId: req.params.id },
+      orderBy: [{ principal: 'desc' }, { id: 'asc' }],
+    });
+    res.json({ success: true, data: dirs });
+  } catch (error) { next(error); }
+};
+
+const agregarDireccion = async (req, res, next) => {
+  try {
+    const { nombre, direccion, principal } = req.body;
+    if (!nombre?.trim() || !direccion?.trim()) {
+      return res.status(400).json({ success: false, error: 'Nombre y dirección son requeridos' });
+    }
+    // Si esta es principal, quitar la marca de las demás
+    if (principal) {
+      await prisma.direccionCliente.updateMany({
+        where: { clienteId: req.params.id },
+        data: { principal: false },
+      });
+    }
+    const dir = await prisma.direccionCliente.create({
+      data: { clienteId: req.params.id, nombre: nombre.trim(), direccion: direccion.trim(), principal: !!principal },
+    });
+    res.status(201).json({ success: true, data: dir });
+  } catch (error) { next(error); }
+};
+
+const actualizarDireccion = async (req, res, next) => {
+  try {
+    const { nombre, direccion, principal } = req.body;
+    if (principal) {
+      await prisma.direccionCliente.updateMany({
+        where: { clienteId: req.params.id },
+        data: { principal: false },
+      });
+    }
+    const dir = await prisma.direccionCliente.update({
+      where: { id: req.params.dirId },
+      data: { nombre: nombre?.trim(), direccion: direccion?.trim(), principal: !!principal },
+    });
+    res.json({ success: true, data: dir });
+  } catch (error) { next(error); }
+};
+
+const eliminarDireccion = async (req, res, next) => {
+  try {
+    await prisma.direccionCliente.delete({ where: { id: req.params.dirId } });
+    res.json({ success: true });
+  } catch (error) { next(error); }
+};
+
+module.exports = { listar, obtener, crear, actualizar, listarEquipos, crearEquipo, historialCliente, listarDirecciones, agregarDireccion, actualizarDireccion, eliminarDireccion };

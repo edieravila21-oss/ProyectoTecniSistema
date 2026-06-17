@@ -25,6 +25,14 @@ export interface Usuario {
   };
 }
 
+export interface DireccionCliente {
+  id: string;
+  clienteId: string;
+  nombre: string;
+  direccion: string;
+  principal: boolean;
+}
+
 export interface Cliente {
   id: string;
   nombre: string;
@@ -37,6 +45,7 @@ export interface Cliente {
   total_gastado?: number;
   equipos?: Equipo[];
   servicios?: Servicio[];
+  direcciones?: DireccionCliente[];
   createdAt: string;
 }
 
