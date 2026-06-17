@@ -8,6 +8,7 @@ const {
 router.use(verifyToken, requireAdmin);
 
 router.get('/', listar);
+router.post('/seed', seedPredefinidos);
 router.get('/:id', obtener);
 router.post('/', crear);
 router.put('/:id', actualizar);
@@ -17,6 +18,5 @@ router.post('/:id/items', agregarItem);
 router.put('/:id/items/:itemId', actualizarItem);
 router.delete('/:id/items/:itemId', eliminarItem);
 router.put('/:id/items', reemplazarItems);
-router.post('/seed', seedPredefinidos);
 
 module.exports = router;

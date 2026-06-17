@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   getCatalogos, crearCatalogo, actualizarCatalogo, eliminarCatalogo, reemplazarItemsCatalogo, seedCatalogoPredefinidos,
-  type CatalogoServicio, type CatalogoChecklistItem,
+  type CatalogoServicio,
 } from '@/api/catalogoServicios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/components/shared/Toast';
 import {
   Plus, X, Pencil, Trash2, Clock, ClipboardList, ChevronDown, ChevronUp,
-  Check, GripVertical, ArrowUp, ArrowDown, Save,
+  GripVertical, ArrowUp, ArrowDown, Save,
 } from 'lucide-react';
 
 type Categoria = 'llegada' | 'diagnostico' | 'reparacion' | 'cierre';
@@ -48,29 +48,23 @@ export const CatalogoServicios = () => {
   const [nuevaDesc, setNuevaDesc] = useState('');
   const [nuevaCat, setNuevaCat] = useState<Categoria>('diagnostico');
 
-  const [seeding, setSeeding] = useState(false);
-
-  const handleSeed = async () => {
-    if (!confirm('¿Importar los 17 servicios predefinidos? Los que ya existen no se duplicarán.')) return;
-    setSeeding(true);
-    try {
-      const { data: res } = await seedCatalogoPredefinidos();
-      toast.success(`${res.data.creados} servicios importados${res.data.omitidos ? `, ${res.data.omitidos} ya existían` : ''}`);
-      fetchCatalogos();
-    } catch { toast.error('Error importando servicios'); }
-    finally { setSeeding(false); }
-  };
-
-  const fetchCatalogos = async () => {
+  const fetchCatalogos = async (autoSeedIfEmpty = false) => {
     setLoading(true);
     try {
       const { data: res } = await getCatalogos();
-      setCatalogos(res.data);
+      if (autoSeedIfEmpty && res.data.length === 0) {
+        // Primera visita: poblar la BD con los servicios predefinidos
+        await seedCatalogoPredefinidos();
+        const { data: res2 } = await getCatalogos();
+        setCatalogos(res2.data);
+      } else {
+        setCatalogos(res.data);
+      }
     } catch { toast.error('Error cargando catálogo'); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchCatalogos(); }, []);
+  useEffect(() => { fetchCatalogos(true); }, []);
 
   const openEditor = (cat: CatalogoServicio) => {
     setEditando(cat);
@@ -158,14 +152,9 @@ export const CatalogoServicios = () => {
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">Catálogo de Servicios</h1>
           <p className="text-sm text-slate-400 mt-0.5">Tipos de servicio, duración y checklist de cada uno</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSeed} disabled={seeding} className="rounded-xl gap-1.5 text-slate-600">
-            {seeding ? 'Importando…' : '↓ Importar predefinidos'}
-          </Button>
-          <Button onClick={openNuevo} className="rounded-xl gap-1.5">
-            <Plus className="h-4 w-4" /> Nuevo servicio
-          </Button>
-        </div>
+        <Button onClick={openNuevo} className="rounded-xl gap-1.5">
+          <Plus className="h-4 w-4" /> Nuevo servicio
+        </Button>
       </div>
 
       <div className={`grid gap-6 ${isEditorOpen ? 'lg:grid-cols-2' : ''}`}>
