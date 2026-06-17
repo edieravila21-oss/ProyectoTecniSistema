@@ -20,7 +20,7 @@ import {
   CheckCircle2, CalendarPlus, Repeat, Pencil,
 } from 'lucide-react';
 import {
-  format, addDays, addMonths, isSameDay, isToday,
+  format, addDays, addMonths, isToday,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -168,11 +168,18 @@ export const CalendarioTecnicos = () => {
 
   const sinAsignar = servicios.filter(s => !s.tecnicoId);
 
+  // Comparamos strings YYYY-MM-DD para evitar desfase por zona horaria (Colombia UTC-5).
+  // Las fechas de la API llegan como "2026-06-17T00:00:00.000Z"; tomar las 10 primeras
+  // letras da siempre la fecha UTC que coincide con lo que enviamos desde el form.
+  const diaFechaStr = format(fecha, 'yyyy-MM-dd');
+
   const getServiciosDia = (tecnicoId: string) =>
-    servicios.filter(s => s.tecnicoId === tecnicoId && s.fecha_programada && isSameDay(new Date(s.fecha_programada), fecha));
+    servicios.filter(s => s.tecnicoId === tecnicoId && s.fecha_programada &&
+      String(s.fecha_programada).substring(0, 10) === diaFechaStr);
 
   const getEventosDia = (tecnicoId: string) =>
-    eventos.filter(e => e.tecnicoId === tecnicoId && isSameDay(new Date(e.fecha), fecha));
+    eventos.filter(e => e.tecnicoId === tecnicoId &&
+      String(e.fecha).substring(0, 10) === diaFechaStr);
 
   const filteredTecnicos = selectedTecnico
     ? tecnicos.filter(t => t.id === selectedTecnico)
@@ -180,16 +187,16 @@ export const CalendarioTecnicos = () => {
 
   const getDisponibilidadTecnicos = () => {
     if (!citaForm.fecha_programada) return [];
-    const diaSeleccionado = new Date(citaForm.fecha_programada + 'T00:00:00');
+    const diaSelStr = citaForm.fecha_programada; // "YYYY-MM-DD"
     return tecnicos.map(t => {
       const servsDia = servicios.filter(s =>
         s.tecnicoId === t.id &&
         s.fecha_programada &&
-        isSameDay(new Date(s.fecha_programada), diaSeleccionado)
+        String(s.fecha_programada).substring(0, 10) === diaSelStr
       );
       const bloquesDia = eventos.filter(e =>
         e.tecnicoId === t.id &&
-        isSameDay(new Date(e.fecha), diaSeleccionado)
+        String(e.fecha).substring(0, 10) === diaSelStr
       );
       const horaInicio = parseInt(citaForm.hora_inicio.split(':')[0]) * 60 + parseInt(citaForm.hora_inicio.split(':')[1]);
       const horaFin = parseInt(citaForm.hora_fin.split(':')[0]) * 60 + parseInt(citaForm.hora_fin.split(':')[1]);
@@ -239,7 +246,7 @@ export const CalendarioTecnicos = () => {
       tecnicoId: evt.tecnicoId,
       titulo: evt.titulo,
       descripcion: evt.descripcion || '',
-      fecha: format(new Date(evt.fecha), 'yyyy-MM-dd'),
+      fecha: String(evt.fecha).substring(0, 10),
       hora_inicio: evt.hora_inicio || '08:00',
       hora_fin: evt.hora_fin || '09:00',
       tipo: evt.tipo || 'personal',
