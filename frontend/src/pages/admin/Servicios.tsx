@@ -13,8 +13,19 @@ import { formatDate, formatCurrency, formatRelative, tipoEquipoLabel } from '@/u
 import type { Servicio, Usuario, ChecklistItem, EventoServicio } from '@/types';
 import {
   Search, X, ChevronDown, ChevronUp,
-  CheckCircle, Trash2, AlertTriangle, Clock,
+  CheckCircle, Trash2, AlertTriangle, Clock, Pencil, Save,
 } from 'lucide-react';
+
+type EditForm = {
+  fecha_programada: string;
+  hora_inicio: string;
+  hora_fin: string;
+  tipo_servicio: string;
+  descripcion_falla: string;
+  direccion_servicio: string;
+  valor_estimado: string;
+  notas_admin: string;
+};
 
 export const Servicios = () => {
   const [servicios, setServicios] = useState<Servicio[]>([]);
@@ -28,6 +39,15 @@ export const Servicios = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [secciones, setSecciones] = useState({ info: true, timeline: false, checklist: false, fotos: false, cierre: false });
+
+  // Edit mode
+  const [editando, setEditando] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm>({
+    fecha_programada: '', hora_inicio: '', hora_fin: '',
+    tipo_servicio: '', descripcion_falla: '', direccion_servicio: '',
+    valor_estimado: '', notas_admin: '',
+  });
+  const [saving, setSaving] = useState(false);
 
   const fetchServicios = useCallback(async () => {
     setLoading(true);
@@ -58,7 +78,46 @@ export const Servicios = () => {
       const { data: res } = await getServicio(id);
       setSelected(res.data);
       setDrawerOpen(true);
+      setEditando(false);
     } catch { toast.error('Error cargando servicio'); }
+  };
+
+  const startEdit = (s: Servicio) => {
+    setEditForm({
+      fecha_programada: s.fecha_programada ? String(s.fecha_programada).substring(0, 10) : '',
+      hora_inicio: s.hora_inicio || '',
+      hora_fin: s.hora_fin || '',
+      tipo_servicio: s.tipo_servicio || '',
+      descripcion_falla: s.descripcion_falla || '',
+      direccion_servicio: s.direccion_servicio || '',
+      valor_estimado: s.valor_estimado != null ? String(s.valor_estimado) : '',
+      notas_admin: s.notas_admin || '',
+    });
+    setEditando(true);
+  };
+
+  const handleGuardar = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const payload: Record<string, any> = {
+        descripcion_falla: editForm.descripcion_falla || null,
+        direccion_servicio: editForm.direccion_servicio || null,
+        hora_inicio: editForm.hora_inicio || null,
+        hora_fin: editForm.hora_fin || null,
+        notas_admin: editForm.notas_admin || null,
+        tipo_servicio: (editForm.tipo_servicio as Servicio['tipo_servicio']) || null,
+      };
+      if (editForm.fecha_programada) payload.fecha_programada = editForm.fecha_programada;
+      if (editForm.valor_estimado !== '') payload.valor_estimado = parseFloat(editForm.valor_estimado);
+      await actualizarServicio(selected.id, payload);
+      toast.success('Servicio actualizado');
+      setEditando(false);
+      await openDrawer(selected.id);
+      fetchServicios();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error || 'Error guardando');
+    } finally { setSaving(false); }
   };
 
   const handleAsignar = async (servicioId: string, tecnicoId: string) => {
@@ -100,6 +159,8 @@ export const Servicios = () => {
 
   const toggleSeccion = (key: keyof typeof secciones) =>
     setSecciones(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const canEdit = selected && selected.estado !== 'completado' && selected.estado !== 'cancelado';
 
   return (
     <div className="space-y-6">
@@ -190,11 +251,13 @@ export const Servicios = () => {
       {/* Drawer */}
       {drawerOpen && selected && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setDrawerOpen(false)} />
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => { setDrawerOpen(false); setEditando(false); }} />
           <div className="relative w-full max-w-lg bg-white h-full overflow-y-auto shadow-2xl">
             <div className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-slate-100 p-5 flex items-center justify-between z-10">
               <h2 className="font-bold text-slate-800">Detalle del servicio</h2>
-              <button onClick={() => setDrawerOpen(false)} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100"><X className="h-4 w-4 text-slate-400" /></button>
+              <button onClick={() => { setDrawerOpen(false); setEditando(false); }} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100">
+                <X className="h-4 w-4 text-slate-400" />
+              </button>
             </div>
 
             <div className="p-5 space-y-3">
@@ -213,123 +276,191 @@ export const Servicios = () => {
 
                   {secciones[key] && key === 'info' && (
                     <div className="space-y-4 p-4">
+                      {/* Estado + acciones */}
                       <div className="flex items-center justify-between">
                         <EstadoBadge estado={selected.estado} />
                         <div className="flex gap-1.5">
-                          {selected.estado === 'pendiente' && <Button size="sm" className="rounded-xl" onClick={() => handleCambiarEstado(selected.id, 'asignado')} disabled={!selected.tecnicoId}>Asignar</Button>}
+                          {canEdit && !editando && (
+                            <Button size="sm" variant="outline" className="rounded-xl gap-1" onClick={() => startEdit(selected)}>
+                              <Pencil className="h-3.5 w-3.5" /> Editar
+                            </Button>
+                          )}
+                          {selected.estado === 'pendiente' && (
+                            <Button size="sm" className="rounded-xl" onClick={() => handleCambiarEstado(selected.id, 'asignado')} disabled={!selected.tecnicoId}>
+                              Asignar
+                            </Button>
+                          )}
                           {selected.estado !== 'completado' && selected.estado !== 'cancelado' && (
-                            <Button size="sm" variant="destructive" className="rounded-xl" onClick={() => handleCambiarEstado(selected.id, 'cancelado')}>Cancelar</Button>
+                            <Button size="sm" variant="destructive" className="rounded-xl" onClick={() => handleCambiarEstado(selected.id, 'cancelado')}>
+                              Cancelar
+                            </Button>
                           )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Cliente</p><p className="font-semibold text-slate-700">{selected.cliente?.nombre}</p></div>
-                        <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Teléfono</p><p className="font-semibold text-slate-700">{selected.cliente?.telefono}</p></div>
-                        <div className="bg-slate-50 rounded-xl p-3">
-                          <p className="text-[11px] text-slate-400 font-medium mb-1">Tipo de servicio</p>
-                          <select
-                            value={selected.tipo_servicio || ''}
-                            onChange={async (e) => {
-                              const tipo = e.target.value;
-                              try {
-                                await actualizarServicio(selected.id, { tipo_servicio: (tipo as Servicio['tipo_servicio']) || undefined });
-                                await openDrawer(selected.id);
-                                fetchServicios();
-                              } catch { toast.error('Error actualizando tipo de servicio'); }
-                            }}
-                            className="w-full text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="">Sin asignar</option>
-                            <option value="diagnostico">Diagnóstico</option>
-                            <option value="mantenimiento">Mantenimiento</option>
-                            <option value="reparacion">Reparación</option>
-                            <option value="instalacion">Instalación</option>
-                          </select>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Fecha</p><p className="font-semibold text-slate-700">{selected.fecha_programada ? formatDate(selected.fecha_programada) : '--'}</p></div>
-                        <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Equipo</p><p className="font-semibold text-slate-700">{selected.equipo ? `${tipoEquipoLabel[selected.equipo.tipo]} ${selected.equipo.marca || ''}` : '--'}</p></div>
-                        <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Dirección</p><p className="font-semibold text-slate-700">{selected.direccion_servicio || '--'}</p></div>
-                        <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Falla reportada</p><p className="text-slate-600">{selected.descripcion_falla || '--'}</p></div>
-                      </div>
 
-                      {/* Panel SLA ejecución — siempre visible para el admin */}
-                      <div className={`rounded-xl p-4 border ${
-                        selected.sla_ejecucion?.excedido === true
-                          ? 'bg-red-50 border-red-200'
-                          : selected.sla_ejecucion?.excedido === false
-                            ? 'bg-emerald-50 border-emerald-200'
-                            : 'bg-slate-50 border-slate-200'
-                      }`}>
-                        <div className="flex items-center gap-2 mb-3">
-                          {selected.sla_ejecucion?.excedido === true
-                            ? <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-                            : selected.sla_ejecucion?.excedido === false
-                              ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
-                              : <Clock className="h-4 w-4 text-slate-400 shrink-0" />
-                          }
-                          <span className={`text-sm font-semibold ${
-                            selected.sla_ejecucion?.excedido === true
-                              ? 'text-red-700'
-                              : selected.sla_ejecucion?.excedido === false
-                                ? 'text-emerald-700'
-                                : 'text-slate-600'
-                          }`}>
-                            {selected.sla_ejecucion?.excedido === true
-                              ? 'Excedió el tiempo SLA'
-                              : selected.sla_ejecucion?.excedido === false
-                                ? 'Dentro del tiempo SLA'
-                                : selected.sla_ejecucion
-                                  ? 'Tiempo de ejecución — en curso'
-                                  : 'Tiempo de ejecución SLA'}
-                          </span>
-                        </div>
-
-                        {selected.sla_ejecucion ? (
-                          <div className="grid grid-cols-2 gap-3 text-sm">
+                      {/* ── MODO EDICIÓN ── */}
+                      {editando ? (
+                        <div className="space-y-3 bg-blue-50/40 border border-blue-100 rounded-xl p-4">
+                          <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <p className="text-[11px] text-slate-500 font-medium">Tiempo esperado</p>
-                              <p className="font-semibold text-slate-700 mt-0.5">{selected.sla_ejecucion.max_min} min</p>
+                              <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tipo de servicio</label>
+                              <select
+                                value={editForm.tipo_servicio}
+                                onChange={e => setEditForm(f => ({ ...f, tipo_servicio: e.target.value }))}
+                                className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                              >
+                                <option value="">Sin asignar</option>
+                                <option value="diagnostico">Diagnóstico</option>
+                                <option value="mantenimiento">Mantenimiento</option>
+                                <option value="reparacion">Reparación</option>
+                                <option value="instalacion">Instalación</option>
+                              </select>
                             </div>
-                            {selected.sla_ejecucion.real_min !== null ? (
-                              <div>
-                                <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
-                                <p className={`font-semibold mt-0.5 ${selected.sla_ejecucion.excedido ? 'text-red-600' : 'text-emerald-600'}`}>
-                                  {selected.sla_ejecucion.real_min} min
-                                  {selected.sla_ejecucion.excedido && (
-                                    <span className="text-[11px] text-red-400 font-normal ml-1">
-                                      (+{selected.sla_ejecucion.real_min - selected.sla_ejecucion.max_min} min extra)
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
-                                <p className="text-[11px] text-slate-400 mt-0.5 italic">Disponible al completar</p>
-                              </div>
+                            <div>
+                              <label className="text-[11px] font-semibold text-slate-500 block mb-1">Fecha</label>
+                              <Input type="date" value={editForm.fecha_programada} onChange={e => setEditForm(f => ({ ...f, fecha_programada: e.target.value }))} className="rounded-lg h-9 text-sm" />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-semibold text-slate-500 block mb-1">Hora inicio</label>
+                              <Input type="time" value={editForm.hora_inicio} onChange={e => setEditForm(f => ({ ...f, hora_inicio: e.target.value }))} className="rounded-lg h-9 text-sm" />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-semibold text-slate-500 block mb-1">Hora fin</label>
+                              <Input type="time" value={editForm.hora_fin} onChange={e => setEditForm(f => ({ ...f, hora_fin: e.target.value }))} className="rounded-lg h-9 text-sm" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Dirección</label>
+                            <Input value={editForm.direccion_servicio} onChange={e => setEditForm(f => ({ ...f, direccion_servicio: e.target.value }))} placeholder="Dirección del servicio" className="rounded-lg h-9 text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Falla reportada</label>
+                            <textarea
+                              value={editForm.descripcion_falla}
+                              onChange={e => setEditForm(f => ({ ...f, descripcion_falla: e.target.value }))}
+                              rows={2}
+                              placeholder="Descripción de la falla"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Valor estimado</label>
+                            <Input type="number" value={editForm.valor_estimado} onChange={e => setEditForm(f => ({ ...f, valor_estimado: e.target.value }))} placeholder="0" className="rounded-lg h-9 text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Notas admin</label>
+                            <textarea
+                              value={editForm.notas_admin}
+                              onChange={e => setEditForm(f => ({ ...f, notas_admin: e.target.value }))}
+                              rows={2}
+                              placeholder="Notas internas"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            />
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <Button onClick={handleGuardar} disabled={saving} className="flex-1 rounded-xl gap-1.5">
+                              <Save className="h-4 w-4" />
+                              {saving ? 'Guardando…' : 'Guardar cambios'}
+                            </Button>
+                            <Button variant="ghost" onClick={() => setEditando(false)} className="rounded-xl">
+                              Cancelar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── MODO LECTURA ── */
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Cliente</p><p className="font-semibold text-slate-700">{selected.cliente?.nombre}</p></div>
+                          <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Teléfono</p><p className="font-semibold text-slate-700">{selected.cliente?.telefono}</p></div>
+                          <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Tipo de servicio</p><p className="font-semibold text-slate-700 capitalize">{selected.tipo_servicio || '--'}</p></div>
+                          <div className="bg-slate-50 rounded-xl p-3">
+                            <p className="text-[11px] text-slate-400 font-medium mb-0.5">Fecha</p>
+                            <p className="font-semibold text-slate-700">{selected.fecha_programada ? formatDate(selected.fecha_programada) : '--'}</p>
+                            {(selected.hora_inicio || selected.hora_fin) && (
+                              <p className="text-xs text-slate-400 mt-0.5">{selected.hora_inicio || ''}{selected.hora_fin ? ` — ${selected.hora_fin}` : ''}</p>
                             )}
                           </div>
-                        ) : (
-                          <p className="text-xs text-slate-400">
-                            {selected.tipo_servicio
-                              ? 'Sin configuración SLA para este tipo de servicio'
-                              : 'Asigna un tipo de servicio para ver el SLA'}
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-slate-400 font-medium mb-1.5">Técnico asignado</p>
-                        {selected.estado === 'completado' || selected.estado === 'cancelado' ? (
-                          <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700">
-                            {selected.tecnico?.nombre || <span className="text-slate-400 font-normal">Sin asignar</span>}
+                          <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Equipo</p><p className="font-semibold text-slate-700">{selected.equipo ? `${tipoEquipoLabel[selected.equipo.tipo]} ${selected.equipo.marca || ''}` : '--'}</p></div>
+                          <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Dirección</p><p className="font-semibold text-slate-700">{selected.direccion_servicio || '--'}</p></div>
+                          <div className="col-span-2 bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Falla reportada</p><p className="text-slate-600">{selected.descripcion_falla || '--'}</p></div>
+                          {selected.valor_estimado != null && (
+                            <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Valor estimado</p><p className="font-semibold text-slate-700">{formatCurrency(selected.valor_estimado)}</p></div>
+                          )}
+                          {selected.notas_admin && (
+                            <div className="col-span-2 bg-amber-50 border border-amber-100 rounded-xl p-3"><p className="text-[11px] text-amber-600 font-medium mb-0.5">Notas admin</p><p className="text-slate-600 text-xs">{selected.notas_admin}</p></div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Panel SLA */}
+                      {!editando && (
+                        <div className={`rounded-xl p-4 border ${
+                          selected.sla_ejecucion?.excedido === true ? 'bg-red-50 border-red-200'
+                            : selected.sla_ejecucion?.excedido === false ? 'bg-emerald-50 border-emerald-200'
+                            : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          <div className="flex items-center gap-2 mb-3">
+                            {selected.sla_ejecucion?.excedido === true ? <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                              : selected.sla_ejecucion?.excedido === false ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                              : <Clock className="h-4 w-4 text-slate-400 shrink-0" />}
+                            <span className={`text-sm font-semibold ${
+                              selected.sla_ejecucion?.excedido === true ? 'text-red-700'
+                                : selected.sla_ejecucion?.excedido === false ? 'text-emerald-700'
+                                : 'text-slate-600'
+                            }`}>
+                              {selected.sla_ejecucion?.excedido === true ? 'Excedió el tiempo SLA'
+                                : selected.sla_ejecucion?.excedido === false ? 'Dentro del tiempo SLA'
+                                : selected.sla_ejecucion ? 'Tiempo de ejecución — en curso'
+                                : 'Tiempo de ejecución SLA'}
+                            </span>
                           </div>
-                        ) : (
-                          <Select value={selected.tecnicoId || ''} onChange={e => e.target.value && handleAsignar(selected.id, e.target.value)} className="rounded-xl">
-                            <option value="">Seleccionar técnico</option>
-                            {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-                          </Select>
-                        )}
-                      </div>
+                          {selected.sla_ejecucion ? (
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <p className="text-[11px] text-slate-500 font-medium">Tiempo esperado</p>
+                                <p className="font-semibold text-slate-700 mt-0.5">{selected.sla_ejecucion.max_min} min</p>
+                              </div>
+                              {selected.sla_ejecucion.real_min !== null ? (
+                                <div>
+                                  <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
+                                  <p className={`font-semibold mt-0.5 ${selected.sla_ejecucion.excedido ? 'text-red-600' : 'text-emerald-600'}`}>
+                                    {selected.sla_ejecucion.real_min} min
+                                    {selected.sla_ejecucion.excedido && (
+                                      <span className="text-[11px] text-red-400 font-normal ml-1">(+{selected.sla_ejecucion.real_min - selected.sla_ejecucion.max_min} min extra)</span>
+                                    )}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div>
+                                  <p className="text-[11px] text-slate-500 font-medium">Tiempo real</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5 italic">Disponible al completar</p>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400">
+                              {selected.tipo_servicio ? 'Sin configuración SLA para este tipo' : 'Asigna un tipo de servicio para ver el SLA'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Técnico asignado */}
+                      {!editando && (
+                        <div>
+                          <p className="text-[11px] text-slate-400 font-medium mb-1.5">Técnico asignado</p>
+                          {selected.estado === 'completado' || selected.estado === 'cancelado' ? (
+                            <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700">
+                              {selected.tecnico?.nombre || <span className="text-slate-400 font-normal">Sin asignar</span>}
+                            </div>
+                          ) : (
+                            <Select value={selected.tecnicoId || ''} onChange={e => e.target.value && handleAsignar(selected.id, e.target.value)} className="rounded-xl">
+                              <option value="">Seleccionar técnico</option>
+                              {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                            </Select>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -403,6 +534,7 @@ export const Servicios = () => {
                 </div>
               ))}
             </div>
+
             {/* Botón eliminar */}
             <div className="p-5 border-t border-slate-100">
               <button
