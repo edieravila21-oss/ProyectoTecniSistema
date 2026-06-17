@@ -73,10 +73,10 @@ export const Login = () => {
   };
 
   const handleDigit = (digit: string) => {
-    if (pin.length >= 6 || loading) return;
+    if (pin.length >= 4 || loading) return;
     const newPin = pin + digit;
     setPin(newPin);
-    if (newPin.length >= 4) {
+    if (newPin.length === 4) {
       if (modo === 'admin-pin') handleLoginAdmin(newPin);
       else handleLoginTecnico(newPin);
     }
@@ -89,18 +89,18 @@ export const Login = () => {
 
   // ── PIN PAD compartido ──────────────────────────────────────────────────
   const PinPad = ({ titulo, subtitulo, onBack }: { titulo: string; subtitulo: string; onBack: () => void }) => (
-    <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6">
+    <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
       <div className="text-center relative">
         <button onClick={onBack} className="absolute left-0 top-0.5 text-slate-400 hover:text-white transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <p className="text-sm text-slate-400">{subtitulo}</p>
-        <h2 className="text-lg font-semibold text-white mt-0.5">{titulo}</h2>
-        <p className="text-sm text-slate-500 mt-1">Ingresa tu PIN</p>
+        <h2 className="text-base font-semibold text-white mt-0.5">{titulo}</h2>
+        <p className="text-xs text-slate-500 mt-0.5">Ingresa tu PIN de 4 dígitos</p>
       </div>
 
-      <div className="flex justify-center gap-3">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="flex justify-center gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
             className={`w-3.5 h-3.5 rounded-full transition-all duration-200 ${
@@ -112,17 +112,17 @@ export const Login = () => {
 
       {loading && (
         <div className="flex justify-center">
-          <div className="h-5 w-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+          <div className="h-4 w-4 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => (
           <button
             key={d}
             onClick={() => handleDigit(d)}
             disabled={loading}
-            className="h-16 rounded-2xl bg-slate-800/80 border border-slate-700 text-white text-2xl font-semibold hover:bg-slate-700 active:scale-95 transition-all duration-150 disabled:opacity-50"
+            className="h-12 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xl font-semibold hover:bg-slate-700 active:scale-95 transition-all duration-150 disabled:opacity-50"
           >
             {d}
           </button>
@@ -131,16 +131,16 @@ export const Login = () => {
         <button
           onClick={() => handleDigit('0')}
           disabled={loading}
-          className="h-16 rounded-2xl bg-slate-800/80 border border-slate-700 text-white text-2xl font-semibold hover:bg-slate-700 active:scale-95 transition-all duration-150 disabled:opacity-50"
+          className="h-12 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-xl font-semibold hover:bg-slate-700 active:scale-95 transition-all duration-150 disabled:opacity-50"
         >
           0
         </button>
         <button
           onClick={handleDelete}
           disabled={loading}
-          className="h-16 rounded-2xl bg-slate-800/50 border border-slate-700 text-slate-400 flex items-center justify-center hover:bg-slate-700 hover:text-white active:scale-95 transition-all duration-150 disabled:opacity-50"
+          className="h-12 rounded-xl bg-slate-800/50 border border-slate-700 text-slate-400 flex items-center justify-center hover:bg-slate-700 hover:text-white active:scale-95 transition-all duration-150 disabled:opacity-50"
         >
-          <Delete className="h-6 w-6" />
+          <Delete className="h-5 w-5" />
         </button>
       </div>
     </div>

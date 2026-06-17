@@ -186,8 +186,8 @@ const loginConPin = async (req, res, next) => {
     }
 
     const pinStr = String(pin).trim();
-    if (!/^\d{4,6}$/.test(pinStr)) {
-      return res.status(400).json({ success: false, error: 'El PIN debe ser un código de 4 a 6 dígitos', code: 'VALIDATION_ERROR' });
+    if (!/^\d{4}$/.test(pinStr)) {
+      return res.status(400).json({ success: false, error: 'El PIN debe ser de 4 dígitos', code: 'VALIDATION_ERROR' });
     }
 
     const tecnicos = await prisma.usuario.findMany({
