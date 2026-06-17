@@ -233,4 +233,34 @@ const disponibilidad = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, crear, actualizar, eliminar, disponibilidad };
+// POST /api/calendario/bulk — crea múltiples eventos en una sola transacción
+const bulk = async (req, res, next) => {
+  try {
+    const { eventos } = req.body;
+    if (!Array.isArray(eventos) || eventos.length === 0) {
+      return res.status(400).json({ success: false, error: 'Se requiere un array de eventos' });
+    }
+    if (eventos.length > 3000) {
+      return res.status(400).json({ success: false, error: 'Máximo 3000 eventos por solicitud' });
+    }
+    const result = await prisma.eventoCalendario.createMany({
+      data: eventos.map(e => ({
+        tecnicoId: e.tecnicoId,
+        titulo: e.titulo,
+        descripcion: e.descripcion || null,
+        fecha: new Date(e.fecha),
+        hora_inicio: e.hora_inicio,
+        hora_fin: e.hora_fin,
+        tipo: e.tipo || 'personal',
+        todo_el_dia: e.todo_el_dia || false,
+        creadoPorId: req.usuario.id,
+      })),
+    });
+    try { getIO().to('admin').emit('eventos_calendario_bulk', { count: result.count }); } catch (_) {}
+    res.status(201).json({ success: true, data: { count: result.count } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { listar, crear, actualizar, eliminar, disponibilidad, bulk };

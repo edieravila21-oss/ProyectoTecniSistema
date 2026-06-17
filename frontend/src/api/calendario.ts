@@ -12,3 +12,6 @@ export const actualizarEventoCalendario = (id: string, data: Partial<EventoCalen
 
 export const eliminarEventoCalendario = (id: string) =>
   api.delete<ApiResponse<{ id: string }>>(`/calendario/${id}`);
+
+export const crearEventosCalendarioBulk = (eventos: Partial<EventoCalendario>[]) =>
+  api.post<ApiResponse<{ count: number }>>('/calendario/bulk', { eventos });

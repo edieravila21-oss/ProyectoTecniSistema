@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { getServicios, crearServicio, cambiarEstadoServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos } from '@/api/clientes';
-import { getEventosCalendario, crearEventoCalendario, eliminarEventoCalendario } from '@/api/calendario';
+import {
+  getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
+  eliminarEventoCalendario, crearEventosCalendarioBulk,
+} from '@/api/calendario';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EstadoBadge } from '@/components/shared/EstadoBadge';
@@ -14,12 +17,64 @@ import {
   ChevronLeft, ChevronRight, X, Users, Calendar, MapPin,
   Phone, Wrench, Clock, AlertTriangle, Plus,
   Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff, Trash2,
-  CheckCircle2, CalendarPlus, Repeat,
+  CheckCircle2, CalendarPlus, Repeat, Pencil,
 } from 'lucide-react';
 import {
   format, addDays, addMonths, isSameDay, isToday,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+// ── Festivos Colombia 2026-2027 ───────────────────────────────────────────────
+// Fijos: 1 Ene, 1 May, 20 Jul, 7 Ago, 8 Dic, 25 Dic + Semana Santa.
+// Trasladables (Ley Emiliani): se mueven al lunes siguiente si no caen en lunes.
+const FESTIVOS_CO = new Set([
+  // 2026
+  '2026-01-01', // Año Nuevo
+  '2026-01-12', // Reyes Magos (6 ene = mar → lun 12)
+  '2026-03-23', // San José (19 mar = jue → lun 23)
+  '2026-04-02', // Jueves Santo (Semana Santa, Easter = 5 abr)
+  '2026-04-03', // Viernes Santo
+  '2026-05-01', // Día del Trabajo
+  '2026-05-18', // Ascensión (Easter+39 = 14 may = jue → lun 18)
+  '2026-06-08', // Corpus Christi (Easter+60 = 4 jun = jue → lun 8)
+  '2026-06-15', // Sagrado Corazón (Easter+68 = 12 jun = vie → lun 15)
+  '2026-06-29', // San Pedro y San Pablo (29 jun = lun)
+  '2026-07-20', // Independencia
+  '2026-08-07', // Boyacá
+  '2026-08-17', // Asunción (15 ago = sáb → lun 17)
+  '2026-10-12', // Día de la Raza (12 oct = lun)
+  '2026-11-02', // Todos los Santos (1 nov = dom → lun 2)
+  '2026-11-16', // Independencia Cartagena (11 nov = mié → lun 16)
+  '2026-12-08', // Inmaculada Concepción
+  '2026-12-25', // Navidad
+  // 2027
+  '2027-01-01', // Año Nuevo
+  '2027-01-11', // Reyes Magos (6 ene = mié → lun 11)
+  '2027-03-22', // San José (19 mar = vie → lun 22)
+  '2027-03-25', // Jueves Santo (Easter = 28 mar)
+  '2027-03-26', // Viernes Santo
+  '2027-05-01', // Día del Trabajo
+  '2027-05-10', // Ascensión (Easter+39 = 6 may = jue → lun 10)
+  '2027-05-31', // Corpus Christi (Easter+60 = 27 may = jue → lun 31)
+  '2027-06-07', // Sagrado Corazón (Easter+68 = 4 jun = vie → lun 7)
+  '2027-07-05', // San Pedro y San Pablo (29 jun = mar → lun 5 jul)
+  '2027-07-20', // Independencia
+  '2027-08-07', // Boyacá
+  '2027-08-16', // Asunción (15 ago = dom → lun 16)
+  '2027-10-18', // Día de la Raza (12 oct = mar → lun 18)
+  '2027-11-05', // Todos los Santos (1 nov = jue → lun 5)
+  '2027-11-12', // Independencia Cartagena (11 nov = dom → lun 12)
+  '2027-12-08', // Inmaculada Concepción
+  '2027-12-25', // Navidad
+]);
+
+const FESTIVOS = FESTIVOS_CO;
+
+const esFestivo = (dateStr: string) => FESTIVOS.has(dateStr);
+const esDomingo = (d: Date) => d.getDay() === 0;
+const esSabado = (d: Date) => d.getDay() === 6;
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const estadoColor: Record<string, string> = {
   pendiente: 'bg-slate-100 border-slate-300 text-slate-600',
@@ -59,6 +114,7 @@ export const CalendarioTecnicos = () => {
   const [modalMode, setModalMode] = useState<ModalMode>('bloqueo');
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [editingEvento, setEditingEvento] = useState<EventoCalendario | null>(null);
 
   // Cita form state
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -122,7 +178,6 @@ export const CalendarioTecnicos = () => {
     ? tecnicos.filter(t => t.id === selectedTecnico)
     : tecnicos;
 
-  // Disponibilidad: para el día y horario seleccionados, calcula carga de cada técnico
   const getDisponibilidadTecnicos = () => {
     if (!citaForm.fecha_programada) return [];
     const diaSeleccionado = new Date(citaForm.fecha_programada + 'T00:00:00');
@@ -136,7 +191,6 @@ export const CalendarioTecnicos = () => {
         e.tecnicoId === t.id &&
         isSameDay(new Date(e.fecha), diaSeleccionado)
       );
-      // Detectar conflicto de horario si hay hora seleccionada
       const horaInicio = parseInt(citaForm.hora_inicio.split(':')[0]) * 60 + parseInt(citaForm.hora_inicio.split(':')[1]);
       const horaFin = parseInt(citaForm.hora_fin.split(':')[0]) * 60 + parseInt(citaForm.hora_fin.split(':')[1]);
       const conflicto = servsDia.some(s => {
@@ -155,14 +209,9 @@ export const CalendarioTecnicos = () => {
     }).sort((a, b) => (a.libre ? -1 : 1) - (b.libre ? -1 : 1) || a.servsDia - b.servsDia);
   };
 
-  const esFinDeSemana = (fechaStr: string) => {
-    if (!fechaStr) return false;
-    const d = new Date(fechaStr + 'T00:00:00').getDay();
-    return d === 0 || d === 6;
-  };
-
   const openCreateModal = (tecnicoId?: string, dia?: Date, mode: ModalMode = 'bloqueo') => {
     const fechaStr = dia ? format(dia, 'yyyy-MM-dd') : format(fecha, 'yyyy-MM-dd');
+    setEditingEvento(null);
     setModalMode(mode);
     setForm({
       tecnicoId: tecnicoId || (tecnicos.length > 0 ? tecnicos[0].id : ''),
@@ -183,13 +232,30 @@ export const CalendarioTecnicos = () => {
     setShowModal(true);
   };
 
+  const openEditModal = (evt: EventoCalendario) => {
+    setEditingEvento(evt);
+    setModalMode('bloqueo');
+    setForm({
+      tecnicoId: evt.tecnicoId,
+      titulo: evt.titulo,
+      descripcion: evt.descripcion || '',
+      fecha: format(new Date(evt.fecha), 'yyyy-MM-dd'),
+      hora_inicio: evt.hora_inicio || '08:00',
+      hora_fin: evt.hora_fin || '09:00',
+      tipo: evt.tipo || 'personal',
+      todo_el_dia: evt.todo_el_dia || false,
+      repeticion: 'ninguna',
+      todos_tecnicos: false,
+    });
+    setShowModal(true);
+  };
+
   const handleClienteCitaChange = async (clienteId: string) => {
     setCitaForm(f => ({ ...f, clienteId, equipoId: '' }));
     if (clienteId) {
       try {
         const { data: res } = await getEquipos(clienteId);
         setEquipos(res.data);
-        // Pre-fill address from client
         const cliente = clientes.find(c => c.id === clienteId);
         if (cliente?.direccion_principal) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion_principal || '' }));
       } catch { setEquipos([]); }
@@ -199,7 +265,12 @@ export const CalendarioTecnicos = () => {
   const handleCrearCita = async () => {
     if (!citaForm.clienteId) { toast.error('Selecciona un cliente'); return; }
     if (!citaForm.fecha_programada) { toast.error('Selecciona una fecha'); return; }
-    if (esFinDeSemana(citaForm.fecha_programada)) { toast.error('Solo se pueden agendar citas de lunes a viernes'); return; }
+    const dCita = new Date(citaForm.fecha_programada + 'T00:00:00');
+    if (esDomingo(dCita)) { toast.error('No se trabaja los domingos'); return; }
+    if (esFestivo(citaForm.fecha_programada)) { toast.error('Día festivo — no se trabaja este día'); return; }
+    if (esSabado(dCita) && citaForm.hora_inicio >= '12:00') {
+      toast.error('Los sábados solo se atiende hasta las 12:00'); return;
+    }
     if (!citaForm.hora_inicio) { toast.error('Selecciona la hora'); return; }
     setSaving(true);
     try {
@@ -217,53 +288,15 @@ export const CalendarioTecnicos = () => {
     finally { setSaving(false); }
   };
 
-  const handleCrear = async () => {
-    if (!form.titulo.trim()) { toast.error('Escribe un título'); return; }
-    if (!form.tecnicoId && !form.todos_tecnicos) { toast.error('Selecciona un técnico'); return; }
-    setSaving(true);
-    try {
-      const fechas = form.repeticion === 'ninguna'
-        ? [form.fecha]
-        : getDiasLaborales(form.fecha, getHastaFecha(form.fecha, form.repeticion));
-      const tecIds = form.todos_tecnicos ? tecnicos.map(t => t.id) : [form.tecnicoId];
-      let count = 0;
-      for (const tecId of tecIds) {
-        for (const f of fechas) {
-          await crearEventoCalendario({
-            tecnicoId: tecId,
-            titulo: form.titulo.trim(),
-            descripcion: form.descripcion.trim() || undefined,
-            fecha: f,
-            hora_inicio: form.todo_el_dia ? '00:00' : form.hora_inicio,
-            hora_fin: form.todo_el_dia ? '23:59' : form.hora_fin,
-            tipo: form.tipo as any,
-            todo_el_dia: form.todo_el_dia,
-          });
-          count++;
-        }
-      }
-      toast.success(count > 1 ? `${count} eventos creados` : 'Evento creado');
-      setShowModal(false);
-      fetchData();
-    } catch { toast.error('Error creando eventos'); }
-    finally { setSaving(false); }
-  };
-
-  const handleEliminarEvento = async (id: string) => {
-    try {
-      await eliminarEventoCalendario(id);
-      toast.success('Evento eliminado');
-      fetchData();
-    } catch { toast.error('Error eliminando evento'); }
-  };
-
+  // Días laborables: lunes–sábado, sin domingos ni festivos
   const getDiasLaborales = (desde: string, hasta: string): string[] => {
     const dias: string[] = [];
     let cur = new Date(desde + 'T00:00:00');
     const end = new Date(hasta + 'T00:00:00');
     while (cur <= end) {
       const d = cur.getDay();
-      if (d >= 1 && d <= 5) dias.push(format(cur, 'yyyy-MM-dd'));
+      const ds = format(cur, 'yyyy-MM-dd');
+      if (d !== 0 && !esFestivo(ds)) dias.push(ds);
       cur = addDays(cur, 1);
     }
     return dias;
@@ -273,10 +306,13 @@ export const CalendarioTecnicos = () => {
     const d = new Date(desde + 'T00:00:00');
     if (rep === 'semana') {
       const dow = d.getDay();
-      return format(addDays(d, dow <= 5 ? 5 - dow : 6), 'yyyy-MM-dd');
+      const daysToSat = dow === 0 ? 6 : 6 - dow;
+      return format(addDays(d, daysToSat), 'yyyy-MM-dd');
     }
-    if (rep === 'quincena') return format(addDays(d, 13), 'yyyy-MM-dd');
     if (rep === 'mes') return format(addMonths(d, 1), 'yyyy-MM-dd');
+    if (rep === 'semestre') return format(addMonths(d, 6), 'yyyy-MM-dd');
+    if (rep === 'anio') return format(addMonths(d, 12), 'yyyy-MM-dd');
+    if (rep === 'siempre') return format(addMonths(d, 24), 'yyyy-MM-dd');
     return desde;
   };
 
@@ -293,6 +329,98 @@ export const CalendarioTecnicos = () => {
     }
   };
 
+  const handleCrear = async () => {
+    if (!form.titulo.trim()) { toast.error('Escribe un título'); return; }
+    setSaving(true);
+    try {
+      // ── Modo edición: actualizar evento existente ──
+      if (editingEvento) {
+        await actualizarEventoCalendario(editingEvento.id, {
+          titulo: form.titulo.trim(),
+          descripcion: form.descripcion.trim() || undefined,
+          fecha: form.fecha,
+          hora_inicio: form.todo_el_dia ? '00:00' : form.hora_inicio,
+          hora_fin: form.todo_el_dia ? '23:59' : form.hora_fin,
+          tipo: form.tipo as any,
+          todo_el_dia: form.todo_el_dia,
+        });
+        toast.success('Evento actualizado');
+        setShowModal(false);
+        setEditingEvento(null);
+        fetchData();
+        return;
+      }
+
+      // ── Modo creación ──
+      if (!form.tecnicoId && !form.todos_tecnicos) {
+        toast.error('Selecciona un técnico');
+        return;
+      }
+      const fechas = form.repeticion === 'ninguna'
+        ? [form.fecha]
+        : getDiasLaborales(form.fecha, getHastaFecha(form.fecha, form.repeticion));
+      const tecIds = form.todos_tecnicos ? tecnicos.map(t => t.id) : [form.tecnicoId];
+      const eventosData = [];
+      for (const tecId of tecIds) {
+        for (const f of fechas) {
+          eventosData.push({
+            tecnicoId: tecId,
+            titulo: form.titulo.trim(),
+            descripcion: form.descripcion.trim() || undefined,
+            fecha: f,
+            hora_inicio: form.todo_el_dia ? '00:00' : form.hora_inicio,
+            hora_fin: form.todo_el_dia ? '23:59' : form.hora_fin,
+            tipo: form.tipo,
+            todo_el_dia: form.todo_el_dia,
+          });
+        }
+      }
+
+      if (eventosData.length > 5) {
+        // Bulk: dividir en chunks de 2999 si es muy grande
+        const CHUNK = 2999;
+        let total = 0;
+        for (let i = 0; i < eventosData.length; i += CHUNK) {
+          const chunk = eventosData.slice(i, i + CHUNK);
+          const { data: result } = await crearEventosCalendarioBulk(chunk as any);
+          total += result.data.count;
+        }
+        toast.success(`${total} eventos creados`);
+      } else {
+        for (const evt of eventosData) {
+          await crearEventoCalendario(evt as any);
+        }
+        toast.success(eventosData.length > 1 ? `${eventosData.length} eventos creados` : 'Evento creado');
+      }
+
+      setShowModal(false);
+      fetchData();
+    } catch { toast.error('Error guardando evento'); }
+    finally { setSaving(false); }
+  };
+
+  const handleEliminarEvento = async (id: string) => {
+    try {
+      await eliminarEventoCalendario(id);
+      toast.success('Evento eliminado');
+      fetchData();
+    } catch { toast.error('Error eliminando evento'); }
+  };
+
+  // ── Indicadores del día actual ───────────────────────────────────────────────
+  const fechaStr = format(fecha, 'yyyy-MM-dd');
+  const esFestivoHoy = esFestivo(fechaStr);
+  const esSabadoHoy = esSabado(fecha);
+  const esDomingoHoy = esDomingo(fecha);
+
+  // Cuántos eventos crearía la recurrencia actual (para mostrar en UI)
+  const estimarEventos = () => {
+    if (form.repeticion === 'ninguna' || !form.fecha) return 1;
+    const dias = getDiasLaborales(form.fecha, getHastaFecha(form.fecha, form.repeticion));
+    const tecs = form.todos_tecnicos ? tecnicos.length : 1;
+    return dias.length * tecs;
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -302,7 +430,7 @@ export const CalendarioTecnicos = () => {
             <Users className="h-5 w-5 text-blue-600" /> Calendario de Técnicos
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Vista semanal de disponibilidad — {tecnicos.length} técnicos activos
+            Vista diaria — {tecnicos.length} técnicos activos
           </p>
         </div>
         <Button
@@ -321,8 +449,17 @@ export const CalendarioTecnicos = () => {
             <button onClick={() => setFecha(d => addDays(d, -1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
               <ChevronLeft className="h-4 w-4 text-slate-600" />
             </button>
-            <div className="px-4 py-2 text-sm font-semibold text-slate-700 min-w-[260px] text-center capitalize">
+            <div className="px-4 py-2 text-sm font-semibold text-slate-700 min-w-[280px] text-center capitalize">
               {format(fecha, "EEEE d 'de' MMMM yyyy", { locale: es })}
+              {esFestivoHoy && (
+                <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold align-middle">FESTIVO</span>
+              )}
+              {esDomingoHoy && (
+                <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold align-middle">DOMINGO</span>
+              )}
+              {esSabadoHoy && (
+                <span className="ml-2 text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold align-middle">SAB · hasta 12:00</span>
+              )}
             </div>
             <button onClick={() => setFecha(d => addDays(d, 1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
               <ChevronRight className="h-4 w-4 text-slate-600" />
@@ -355,6 +492,16 @@ export const CalendarioTecnicos = () => {
           </div>
         </div>
       </Card>
+
+      {/* Alerta festivo / domingo */}
+      {(esFestivoHoy || esDomingoHoy) && (
+        <Card className="border-amber-200 bg-amber-50/50 p-3">
+          <p className="text-sm font-semibold text-amber-700 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            {esDomingoHoy ? 'Domingo — día no laboral' : 'Festivo colombiano — no se trabaja este día'}
+          </p>
+        </Card>
+      )}
 
       {/* Unassigned alert */}
       {sinAsignar.length > 0 && (
@@ -394,8 +541,11 @@ export const CalendarioTecnicos = () => {
                   </div>
                   <div className="flex flex-1">
                     {HORAS.map(h => (
-                      <div key={h} style={{ width: PX_POR_HORA }} className="text-center py-2 border-l border-slate-100 shrink-0">
-                        <span className="text-[10px] font-bold text-slate-400">{String(h).padStart(2, '0')}:00</span>
+                      <div key={h} style={{ width: PX_POR_HORA }}
+                        className={`text-center py-2 border-l border-slate-100 shrink-0 ${esSabadoHoy && h >= 12 ? 'bg-slate-100/60' : ''}`}>
+                        <span className={`text-[10px] font-bold ${esSabadoHoy && h >= 12 ? 'text-slate-300' : 'text-slate-400'}`}>
+                          {String(h).padStart(2, '0')}:00
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -445,6 +595,23 @@ export const CalendarioTecnicos = () => {
                           <div key={h} style={{ left: (h - HORA_INICIO) * PX_POR_HORA }} className="absolute top-0 bottom-0 w-px bg-slate-100" />
                         ))}
 
+                        {/* Overlay sábado: sin servicio después de 12:00 */}
+                        {esSabadoHoy && (
+                          <div
+                            style={{
+                              left: (12 - HORA_INICIO) * PX_POR_HORA,
+                              width: (HORA_INICIO + HORAS.length - 12) * PX_POR_HORA,
+                            }}
+                            className="absolute top-0 bottom-0 bg-slate-100/80 border-l-2 border-dashed border-slate-300 z-10 pointer-events-none"
+                          >
+                            {idx === 0 && (
+                              <span className="absolute top-1 left-1 text-[8px] text-slate-400 font-bold whitespace-nowrap select-none">
+                                Sin servicio
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         {/* Indicador hora actual */}
                         {esHoy && nowH >= HORA_INICIO && nowH <= HORA_INICIO + HORAS.length && (
                           <div
@@ -464,6 +631,13 @@ export const CalendarioTecnicos = () => {
                               <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
                               <span className={`text-[10px] font-bold ${cfg.color} truncate flex-1`}>{evt.titulo}</span>
                               <span className={`text-[10px] ${cfg.color} opacity-60`}>Todo el día</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openEditModal(evt); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                title="Editar evento"
+                              >
+                                <Pencil className="h-3 w-3 text-blue-400 hover:text-blue-600" />
+                              </button>
                               <button onClick={() => handleEliminarEvento(evt.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                                 <Trash2 className="h-3 w-3 text-red-400" />
                               </button>
@@ -490,6 +664,13 @@ export const CalendarioTecnicos = () => {
                                 <p className={`text-[10px] font-bold ${cfg.color} truncate`}>{evt.titulo}</p>
                                 <p className={`text-[9px] ${cfg.color} opacity-60`}>{evt.hora_inicio}–{evt.hora_fin}</p>
                               </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openEditModal(evt); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                title="Editar evento"
+                              >
+                                <Pencil className="h-3 w-3 text-blue-400 hover:text-blue-600" />
+                              </button>
                               <button onClick={() => handleEliminarEvento(evt.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                                 <Trash2 className="h-3 w-3 text-red-400" />
                               </button>
@@ -518,7 +699,7 @@ export const CalendarioTecnicos = () => {
                         })}
 
                         {/* Sin nada */}
-                        {servsDia.length === 0 && evtsDia.length === 0 && (
+                        {servsDia.length === 0 && evtsDia.length === 0 && !esFestivoHoy && !esDomingoHoy && (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <button
                               onClick={() => openCreateModal(tec.id, fecha, 'cita')}
@@ -554,6 +735,10 @@ export const CalendarioTecnicos = () => {
             <div className="flex items-center gap-1.5">
               <span className="h-3 w-0.5 bg-red-400 rounded" />
               <span className="text-[11px] text-slate-500">Hora actual</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="h-3 w-3 bg-slate-100 border border-dashed border-slate-300 rounded" />
+              <span className="text-[11px] text-slate-500">Sin servicio (Sáb 12pm+)</span>
             </div>
           </div>
         </>
@@ -709,52 +894,63 @@ export const CalendarioTecnicos = () => {
         </div>
       )}
 
-      {/* Modal crear evento/bloqueo o agendar cita */}
+      {/* Modal crear / editar evento o agendar cita */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setShowModal(false); setEditingEvento(null); }} />
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
 
             {/* Header con pestañas */}
             <div className="p-5 border-b border-slate-100 shrink-0">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-slate-800">
-                  {modalMode === 'cita' ? 'Agendar cita' : 'Bloquear horario'}
+                  {editingEvento
+                    ? 'Editar evento'
+                    : modalMode === 'cita'
+                    ? 'Agendar cita'
+                    : 'Bloquear horario'}
                 </h3>
-                <button onClick={() => setShowModal(false)} className="h-9 w-9 rounded-xl hover:bg-slate-100 flex items-center justify-center">
+                <button onClick={() => { setShowModal(false); setEditingEvento(null); }} className="h-9 w-9 rounded-xl hover:bg-slate-100 flex items-center justify-center">
                   <X className="h-4 w-4 text-slate-400" />
                 </button>
               </div>
-              <div className="flex rounded-xl border border-slate-200 overflow-hidden">
-                <button
-                  onClick={() => setModalMode('cita')}
-                  className={`flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${modalMode === 'cita' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-                >
-                  <CalendarPlus className="h-3.5 w-3.5" /> Agendar cita
-                </button>
-                <button
-                  onClick={() => setModalMode('bloqueo')}
-                  className={`flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${modalMode === 'bloqueo' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-                >
-                  <Ban className="h-3.5 w-3.5" /> Bloquear horario
-                </button>
-              </div>
+              {/* Solo mostrar tabs si no estamos editando */}
+              {!editingEvento && (
+                <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+                  <button
+                    onClick={() => setModalMode('cita')}
+                    className={`flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${modalMode === 'cita' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" /> Agendar cita
+                  </button>
+                  <button
+                    onClick={() => setModalMode('bloqueo')}
+                    className={`flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${modalMode === 'bloqueo' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    <Ban className="h-3.5 w-3.5" /> Bloquear horario
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="overflow-y-auto flex-1">
               {/* ── MODO CITA ── */}
-              {modalMode === 'cita' && (
+              {modalMode === 'cita' && !editingEvento && (
                 <div className="p-5 space-y-4">
                   {/* Fecha primero para computar disponibilidad */}
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-3">
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Fecha <span className="text-slate-400 font-normal">(Lun–Vie)</span></label>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
+                        Fecha <span className="text-slate-400 font-normal">(Lun–Sáb, sin festivos)</span>
+                      </label>
                       <input
                         type="date"
                         value={citaForm.fecha_programada}
                         onChange={e => {
                           const v = e.target.value;
-                          if (esFinDeSemana(v)) { toast.error('Solo lunes a viernes'); return; }
+                          const d = new Date(v + 'T00:00:00');
+                          if (esDomingo(d)) { toast.error('No se trabaja los domingos'); return; }
+                          if (esFestivo(v)) { toast.error('Día festivo — no se trabaja'); return; }
                           setCitaForm(f => ({ ...f, fecha_programada: v }));
                         }}
                         className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
@@ -785,6 +981,13 @@ export const CalendarioTecnicos = () => {
                       </select>
                     </div>
                   </div>
+
+                  {/* Aviso sábado */}
+                  {citaForm.fecha_programada && esSabado(new Date(citaForm.fecha_programada + 'T00:00:00')) && (
+                    <div className="text-xs text-blue-600 bg-blue-50 rounded-xl px-3 py-2 border border-blue-200">
+                      Sábado — atención solo hasta las 12:00
+                    </div>
+                  )}
 
                   {/* Panel disponibilidad técnicos */}
                   {citaForm.fecha_programada && (
@@ -883,28 +1086,36 @@ export const CalendarioTecnicos = () => {
                 </div>
               )}
 
-              {/* ── MODO BLOQUEO ── */}
+              {/* ── MODO BLOQUEO / EDICIÓN ── */}
               {modalMode === 'bloqueo' && (
                 <div className="p-5 space-y-4">
+                  {/* Técnico — solo editable en creación */}
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Técnico</label>
                     {!form.todos_tecnicos && (
-                      <select value={form.tecnicoId}
+                      <select
+                        value={form.tecnicoId}
                         onChange={e => setForm(f => ({ ...f, tecnicoId: e.target.value }))}
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2">
+                        disabled={!!editingEvento}
+                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
                         {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
                       </select>
                     )}
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <div
-                        className={`relative w-11 h-6 rounded-full transition-colors ${form.todos_tecnicos ? 'bg-blue-600' : 'bg-slate-200'}`}
-                        onClick={() => setForm(f => ({ ...f, todos_tecnicos: !f.todos_tecnicos }))}
-                      >
-                        <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.todos_tecnicos ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                      </div>
-                      <span className="text-sm font-medium text-slate-700">Aplicar a todos los técnicos</span>
-                    </label>
+                    {!editingEvento && (
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <div
+                          className={`relative w-11 h-6 rounded-full transition-colors ${form.todos_tecnicos ? 'bg-blue-600' : 'bg-slate-200'}`}
+                          onClick={() => setForm(f => ({ ...f, todos_tecnicos: !f.todos_tecnicos }))}
+                        >
+                          <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.todos_tecnicos ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                        </div>
+                        <span className="text-sm font-medium text-slate-700">Aplicar a todos los técnicos</span>
+                      </label>
+                    )}
                   </div>
+
+                  {/* Tipo de evento */}
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-2 block">Tipo de evento</label>
                     <div className="grid grid-cols-3 gap-2">
@@ -930,6 +1141,7 @@ export const CalendarioTecnicos = () => {
                       })}
                     </div>
                   </div>
+
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Título</label>
                     <input type="text" value={form.titulo}
@@ -937,6 +1149,7 @@ export const CalendarioTecnicos = () => {
                       placeholder="Ej: Vacaciones, Capacitación AC inverter"
                       className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
+
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Descripción (opcional)</label>
                     <textarea value={form.descripcion}
@@ -944,43 +1157,52 @@ export const CalendarioTecnicos = () => {
                       placeholder="Detalles adicionales..." rows={2}
                       className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
                   </div>
+
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Fecha</label>
                     <input type="date" value={form.fecha}
                       onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
                       className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-2 block">Repetir</label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {([
-                        { key: 'ninguna', label: 'Solo hoy' },
-                        { key: 'semana', label: 'Esta semana' },
-                        { key: 'quincena', label: '2 semanas' },
-                        { key: 'mes', label: '1 mes' },
-                      ] as const).map(({ key, label }) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setForm(f => ({ ...f, repeticion: key }))}
-                          className={`py-2 px-1 rounded-xl text-[10px] font-semibold border-2 transition-all ${
-                            form.repeticion === key
-                              ? 'border-blue-500 bg-blue-50 text-blue-700'
-                              : 'border-slate-100 text-slate-500 hover:border-slate-200'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+
+                  {/* Repetición — solo en creación, no en edición */}
+                  {!editingEvento && (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-2 block">Repetir</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([
+                          { key: 'ninguna', label: 'Solo hoy' },
+                          { key: 'semana', label: 'Esta semana' },
+                          { key: 'mes', label: '1 mes' },
+                          { key: 'semestre', label: '6 meses' },
+                          { key: 'anio', label: '1 año' },
+                          { key: 'siempre', label: '♾ Para siempre' },
+                        ] as const).map(({ key, label }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setForm(f => ({ ...f, repeticion: key }))}
+                            className={`py-2 px-1 rounded-xl text-[10px] font-semibold border-2 transition-all ${
+                              form.repeticion === key
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-slate-100 text-slate-500 hover:border-slate-200'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {form.repeticion !== 'ninguna' && (
+                        <p className="text-[11px] text-blue-600 mt-1.5 flex items-center gap-1">
+                          <Repeat className="h-3 w-3 shrink-0" />
+                          {form.repeticion === 'siempre' ? 'Próximos 2 años · Lun–Sáb, sin festivos ni domingos' : 'Lun–Sáb, excluye domingos y festivos'}
+                          {form.todos_tecnicos && tecnicos.length > 0 ? ` · ${tecnicos.length} técnicos` : ''}
+                          {' · '}~{estimarEventos()} evento{estimarEventos() !== 1 ? 's' : ''}
+                        </p>
+                      )}
                     </div>
-                    {form.repeticion !== 'ninguna' && (
-                      <p className="text-[11px] text-blue-600 mt-1.5 flex items-center gap-1">
-                        <Repeat className="h-3 w-3 shrink-0" />
-                        Solo días laborales Lun–Vie
-                        {form.todos_tecnicos && tecnicos.length > 0 ? ` · ${tecnicos.length} técnicos` : ''}
-                      </p>
-                    )}
-                  </div>
+                  )}
+
                   <label className="flex items-center gap-3 cursor-pointer">
                     <div className={`relative w-11 h-6 rounded-full transition-colors ${form.todo_el_dia ? 'bg-blue-600' : 'bg-slate-200'}`}
                       onClick={() => setForm(f => ({ ...f, todo_el_dia: !f.todo_el_dia }))}>
@@ -988,6 +1210,7 @@ export const CalendarioTecnicos = () => {
                     </div>
                     <span className="text-sm font-medium text-slate-700">Todo el día</span>
                   </label>
+
                   {!form.todo_el_dia && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1010,15 +1233,24 @@ export const CalendarioTecnicos = () => {
 
             {/* Acciones */}
             <div className="p-5 border-t border-slate-100 flex gap-3 shrink-0">
-              <button onClick={() => setShowModal(false)}
-                className="flex-1 h-12 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+              <button
+                onClick={() => { setShowModal(false); setEditingEvento(null); }}
+                className="flex-1 h-12 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
                 Cancelar
               </button>
               <button
-                onClick={modalMode === 'cita' ? handleCrearCita : handleCrear}
-                disabled={saving || (modalMode === 'bloqueo' && !form.titulo.trim()) || (modalMode === 'cita' && !citaForm.clienteId)}
-                className="flex-1 h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
-                {saving ? 'Guardando...' : modalMode === 'cita' ? 'Agendar cita' : 'Crear evento'}
+                onClick={modalMode === 'cita' && !editingEvento ? handleCrearCita : handleCrear}
+                disabled={saving || (modalMode === 'bloqueo' && !form.titulo.trim()) || (modalMode === 'cita' && !editingEvento && !citaForm.clienteId)}
+                className="flex-1 h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {saving
+                  ? 'Guardando...'
+                  : editingEvento
+                  ? 'Guardar cambios'
+                  : modalMode === 'cita'
+                  ? 'Agendar cita'
+                  : 'Crear evento'}
               </button>
             </div>
           </div>
