@@ -16,8 +16,8 @@ import type { Servicio, Usuario, EventoCalendario, Cliente, Equipo } from '@/typ
 import {
   ChevronLeft, ChevronRight, X, Users, Calendar, MapPin,
   Phone, Wrench, Clock, AlertTriangle, Plus,
-  Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff, Trash2,
-  CheckCircle2, CalendarPlus, Repeat, Pencil,
+  Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff,
+  CheckCircle2, CalendarPlus, Repeat,
 } from 'lucide-react';
 import {
   format, addDays, addMonths, isToday,
@@ -634,52 +634,51 @@ export const CalendarioTecnicos = () => {
                           const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
                           const Icon = cfg.icon;
                           return (
-                            <div key={evt.id} className={`absolute inset-x-1 top-1 bottom-1 rounded-lg border px-2 flex items-center gap-1.5 ${cfg.bg} ${cfg.border} group`}>
-                              <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
-                              <span className={`text-[10px] font-bold ${cfg.color} truncate flex-1`}>{evt.titulo}</span>
-                              <span className={`text-[10px] ${cfg.color} opacity-60`}>Todo el día</span>
+                            <div
+                              key={evt.id}
+                              onClick={() => openEditModal(evt)}
+                              className={`absolute inset-x-1 top-1 bottom-1 rounded-lg border px-2.5 flex items-center gap-2 cursor-pointer group hover:shadow-sm hover:brightness-95 transition-all relative ${cfg.bg} ${cfg.border}`}
+                            >
+                              <Icon className={`h-3.5 w-3.5 ${cfg.color} shrink-0`} />
+                              <span className={`text-[10px] font-semibold ${cfg.color} truncate flex-1`}>{evt.titulo}</span>
+                              <span className={`text-[10px] ${cfg.color} opacity-50 shrink-0`}>Todo el día</span>
                               <button
-                                onClick={(e) => { e.stopPropagation(); openEditModal(evt); }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                title="Editar evento"
+                                onClick={(e) => { e.stopPropagation(); handleEliminarEvento(evt.id); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0.5 rounded hover:bg-red-100"
+                                title="Eliminar"
                               >
-                                <Pencil className="h-3 w-3 text-blue-400 hover:text-blue-600" />
-                              </button>
-                              <button onClick={() => handleEliminarEvento(evt.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                <Trash2 className="h-3 w-3 text-red-400" />
+                                <X className="h-3 w-3 text-red-400" />
                               </button>
                             </div>
                           );
                         })}
 
-                        {/* Eventos con hora */}
+                        {/* Eventos con hora — bloque completo abre edición al hacer click */}
                         {evtsDia.filter(e => !e.todo_el_dia).map(evt => {
                           const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
                           const Icon = cfg.icon;
                           const startH = parseHora(evt.hora_inicio, HORA_INICIO);
                           const endH = parseHora(evt.hora_fin, startH + 1);
                           const left = Math.max(0, (startH - HORA_INICIO) * PX_POR_HORA);
-                          const width = Math.max(40, (endH - startH) * PX_POR_HORA);
+                          const width = Math.max(44, (endH - startH) * PX_POR_HORA);
                           return (
                             <div
                               key={evt.id}
                               style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
-                              className={`rounded-lg border px-2 flex items-center gap-1 overflow-hidden ${cfg.bg} ${cfg.border} group`}
+                              onClick={() => openEditModal(evt)}
+                              className={`rounded-lg border px-2 py-1 flex flex-col justify-center cursor-pointer group hover:shadow-md hover:brightness-95 hover:z-30 transition-all z-10 relative ${cfg.bg} ${cfg.border}`}
                             >
-                              <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
-                              <div className="min-w-0 flex-1">
-                                <p className={`text-[10px] font-bold ${cfg.color} truncate`}>{evt.titulo}</p>
-                                <p className={`text-[9px] ${cfg.color} opacity-60`}>{evt.hora_inicio}–{evt.hora_fin}</p>
+                              <div className="flex items-center gap-1 min-w-0">
+                                <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
+                                <p className={`text-[10px] font-semibold ${cfg.color} truncate leading-tight`}>{evt.titulo}</p>
                               </div>
+                              <p className={`text-[9px] ${cfg.color} opacity-60 leading-tight`}>{evt.hora_inicio}–{evt.hora_fin}</p>
                               <button
-                                onClick={(e) => { e.stopPropagation(); openEditModal(evt); }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                title="Editar evento"
+                                onClick={(e) => { e.stopPropagation(); handleEliminarEvento(evt.id); }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0.5 right-0.5 p-0.5 rounded hover:bg-red-100"
+                                title="Eliminar"
                               >
-                                <Pencil className="h-3 w-3 text-blue-400 hover:text-blue-600" />
-                              </button>
-                              <button onClick={() => handleEliminarEvento(evt.id)} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                <Trash2 className="h-3 w-3 text-red-400" />
+                                <X className="h-2.5 w-2.5 text-red-400" />
                               </button>
                             </div>
                           );
