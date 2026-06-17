@@ -1126,9 +1126,12 @@ export const CalendarioTecnicos = () => {
                           <button key={key} onClick={() => {
                             const upd: Partial<typeof form> = { tipo: key };
                             if (key === 'almuerzo') {
-                              upd.hora_inicio = '12:30';
-                              upd.hora_fin = '13:00';
                               upd.todo_el_dia = false;
+                              // Solo auto-rellena las horas la primera vez que se selecciona almuerzo
+                              if (form.tipo !== 'almuerzo') {
+                                upd.hora_inicio = '12:30';
+                                upd.hora_fin = '13:00';
+                              }
                               if (!form.titulo || form.titulo === 'Hora de almuerzo') upd.titulo = 'Hora de almuerzo';
                             }
                             setForm(f => ({ ...f, ...upd }));
