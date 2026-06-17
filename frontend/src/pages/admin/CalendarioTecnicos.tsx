@@ -37,10 +37,10 @@ const especialidadBadge: Record<string, { label: string; cls: string }> = {
 };
 
 const tipoBloqueoConfig: Record<string, { label: string; icon: typeof Ban; color: string; bg: string; border: string }> = {
+  almuerzo: { label: 'Almuerzo', icon: Coffee, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-300' },
   personal: { label: 'Personal', icon: Ban, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-300' },
   vacaciones: { label: 'Vacaciones', icon: Palmtree, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-300' },
   capacitacion: { label: 'Capacitación', icon: GraduationCap, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-300' },
-  almuerzo: { label: 'Almuerzo', icon: Coffee, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-300' },
   cita_medica: { label: 'Cita médica', icon: Stethoscope, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-300' },
   otro: { label: 'Otro', icon: CalendarOff, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-300' },
 };
@@ -167,12 +167,12 @@ export const CalendarioTecnicos = () => {
     setModalMode(mode);
     setForm({
       tecnicoId: tecnicoId || (tecnicos.length > 0 ? tecnicos[0].id : ''),
-      titulo: '',
+      titulo: mode === 'bloqueo' ? 'Hora de almuerzo' : '',
       descripcion: '',
       fecha: fechaStr,
-      hora_inicio: '08:00',
-      hora_fin: '09:00',
-      tipo: 'personal',
+      hora_inicio: mode === 'bloqueo' ? '12:30' : '08:00',
+      hora_fin: mode === 'bloqueo' ? '13:00' : '09:00',
+      tipo: 'almuerzo',
       todo_el_dia: false,
       repeticion: 'ninguna',
       todos_tecnicos: false,
