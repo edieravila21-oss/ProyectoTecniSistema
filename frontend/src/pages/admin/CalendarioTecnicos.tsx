@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getServicios, crearServicio, cambiarEstadoServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente } from '@/api/clientes';
+import { getSlaConfigs } from '@/api/slaConfig';
 import {
   getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
   eliminarEventoCalendario, crearEventosCalendarioBulk,
@@ -119,6 +120,7 @@ export const CalendarioTecnicos = () => {
   // Cita form state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
+  const [slaDuraciones, setSlaDuraciones] = useState<Record<string, number>>({});
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
   const [savingCliente, setSavingCliente] = useState(false);
   const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', telefono: '', direccion_principal: '' });
@@ -238,6 +240,11 @@ export const CalendarioTecnicos = () => {
     setCitaForm(f => ({ ...f, tecnicoId: tecnicoId || '', fecha_programada: fechaStr }));
     if (mode === 'cita') {
       getClientes({}).then(r => setClientes(r.data.data)).catch(() => {});
+      getSlaConfigs().then(r => {
+        const map: Record<string, number> = {};
+        r.data.data.forEach(s => { map[s.tipo_servicio] = s.max_tiempo_ejecucion_min; });
+        setSlaDuraciones(map);
+      }).catch(() => {});
     }
     setShowModal(true);
   };
@@ -989,11 +996,27 @@ export const CalendarioTecnicos = () => {
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Inicio</label>
                       <input type="time" value={citaForm.hora_inicio}
-                        onChange={e => setCitaForm(f => ({ ...f, hora_inicio: e.target.value }))}
+                        onChange={e => {
+                          const inicio = e.target.value;
+                          const dur = slaDuraciones[citaForm.tipo_servicio];
+                          if (dur) {
+                            const [h, m] = inicio.split(':').map(Number);
+                            const finMin = h * 60 + m + dur;
+                            const fin = `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
+                            setCitaForm(f => ({ ...f, hora_inicio: inicio, hora_fin: fin }));
+                          } else {
+                            setCitaForm(f => ({ ...f, hora_inicio: inicio }));
+                          }
+                        }}
                         className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Fin</label>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
+                        Fin
+                        {slaDuraciones[citaForm.tipo_servicio] && (
+                          <span className="ml-1 text-blue-500 font-normal">({slaDuraciones[citaForm.tipo_servicio]} min)</span>
+                        )}
+                      </label>
                       <input type="time" value={citaForm.hora_fin}
                         onChange={e => setCitaForm(f => ({ ...f, hora_fin: e.target.value }))}
                         className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1001,7 +1024,18 @@ export const CalendarioTecnicos = () => {
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Tipo servicio</label>
                       <select value={citaForm.tipo_servicio}
-                        onChange={e => setCitaForm(f => ({ ...f, tipo_servicio: e.target.value }))}
+                        onChange={e => {
+                          const tipo = e.target.value;
+                          const dur = slaDuraciones[tipo];
+                          if (dur) {
+                            const [h, m] = citaForm.hora_inicio.split(':').map(Number);
+                            const finMin = h * 60 + m + dur;
+                            const fin = `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
+                            setCitaForm(f => ({ ...f, tipo_servicio: tipo, hora_fin: fin }));
+                          } else {
+                            setCitaForm(f => ({ ...f, tipo_servicio: tipo }));
+                          }
+                        }}
                         className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                         <option value="">Tipo</option>
                         <option value="diagnostico">Diagnóstico</option>
