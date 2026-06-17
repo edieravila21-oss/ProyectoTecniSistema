@@ -1,5 +1,5 @@
 const errorHandler = (err, req, res, _next) => {
-  console.error('Error:', err.message);
+  console.error(`[Error] ${req.method} ${req.path} →`, err.message, err.stack?.split('\n')[1]?.trim() || '');
 
   if (err.name === 'ValidationError' || err.message?.includes('Validation')) {
     return res.status(400).json({

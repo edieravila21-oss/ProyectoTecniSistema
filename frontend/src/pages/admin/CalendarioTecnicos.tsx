@@ -95,18 +95,17 @@ export const CalendarioTecnicos = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    try {
-      const diaStr = format(fecha, 'yyyy-MM-dd');
-      const [servRes, tecRes, evtRes] = await Promise.all([
-        getServicios({ desde: diaStr, hasta: diaStr, limit: '200' }),
-        getUsuarios({ rol: 'tecnico', activo: 'true' }),
-        getEventosCalendario({ desde: diaStr, hasta: diaStr }),
-      ]);
-      setServicios(servRes.data.data);
-      setTecnicos(tecRes.data.data);
-      setEventos(evtRes.data.data);
-    } catch { toast.error('Error cargando calendario'); }
-    finally { setLoading(false); }
+    const diaStr = format(fecha, 'yyyy-MM-dd');
+    const [servRes, tecRes, evtRes] = await Promise.allSettled([
+      getServicios({ desde: diaStr, hasta: diaStr, limit: '200' }),
+      getUsuarios({ rol: 'tecnico', activo: 'true' }),
+      getEventosCalendario({ desde: diaStr, hasta: diaStr }),
+    ]);
+    if (servRes.status === 'fulfilled') setServicios(servRes.value.data.data);
+    if (tecRes.status  === 'fulfilled') setTecnicos(tecRes.value.data.data);
+    if (evtRes.status  === 'fulfilled') setEventos(evtRes.value.data.data);
+    if (tecRes.status  === 'rejected')  toast.error('Error cargando técnicos');
+    setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, [fecha]);
