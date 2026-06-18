@@ -783,16 +783,39 @@ export const CalendarioTecnicos = () => {
                           const endH = parseHora(s.hora_fin, startH + 1.5);
                           const left = Math.max(0, (startH - HORA_INICIO) * PX_POR_HORA);
                           const width = Math.max(60, (endH - startH) * PX_POR_HORA);
+                          const enEjecucion = s.estado === 'en_servicio';
+                          const enCamino = s.estado === 'en_camino';
                           return (
                             <button
                               key={s.id}
                               style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
                               onClick={() => setSelectedServicio(s)}
-                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${estadoColor[s.estado]}`}
+                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${estadoColor[s.estado]} ${enEjecucion ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}
                             >
-                              <p className="text-[10px] font-bold truncate">{s.hora_inicio}–{s.hora_fin}</p>
+                              <div className="flex items-center justify-between gap-0.5">
+                                <p className="text-[10px] font-bold truncate">{s.hora_inicio}–{s.hora_fin}</p>
+                                {enEjecucion && (
+                                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500" />
+                                  </span>
+                                )}
+                                {enCamino && (
+                                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[11px] font-semibold truncate leading-tight">{s.cliente?.nombre}</p>
-                              {s.equipo && <p className="text-[9px] opacity-60 truncate">{tipoEquipoLabel[s.equipo.tipo]}</p>}
+                              {enEjecucion && (
+                                <p className="text-[9px] font-bold text-orange-600 flex items-center gap-0.5 truncate">
+                                  <Wrench className="h-2.5 w-2.5 shrink-0" /> En ejecución
+                                </p>
+                              )}
+                              {!enEjecucion && s.equipo && (
+                                <p className="text-[9px] opacity-60 truncate">{tipoEquipoLabel[s.equipo.tipo]}</p>
+                              )}
                             </button>
                           );
                         })}
