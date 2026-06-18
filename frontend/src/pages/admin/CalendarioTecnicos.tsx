@@ -196,6 +196,20 @@ export const CalendarioTecnicos = () => {
     eventos.filter(e => e.tecnicoId === tecnicoId &&
       String(e.fecha).substring(0, 10) === diaFechaStr);
 
+  // Eventos duplicados en ≥2 técnicos: se muestran en franja compartida y se ocultan de las columnas
+  const eventosCompartidosDia = (() => {
+    const grupos = new Map<string, EventoCalendario[]>();
+    for (const e of eventos) {
+      if (String(e.fecha).substring(0, 10) !== diaFechaStr) continue;
+      const key = `${e.titulo}|${e.hora_inicio}|${e.hora_fin}|${e.todo_el_dia}`;
+      if (!grupos.has(key)) grupos.set(key, []);
+      grupos.get(key)!.push(e);
+    }
+    return [...grupos.values()].filter(g => g.length >= 2).map(g => g[0]);
+  })();
+  const esEventoCompartido = (e: EventoCalendario) =>
+    eventosCompartidosDia.some(s => s.titulo === e.titulo && s.hora_inicio === e.hora_inicio && s.hora_fin === e.hora_fin && s.todo_el_dia === e.todo_el_dia);
+
   const filteredTecnicos = selectedTecnico
     ? tecnicos.filter(t => t.id === selectedTecnico)
     : tecnicos;
@@ -651,10 +665,56 @@ export const CalendarioTecnicos = () => {
                   </div>
                 </div>
 
+                {/* Franja compartida: eventos que aplican a todos los técnicos */}
+                {eventosCompartidosDia.length > 0 && (
+                  <div className="flex border-b border-orange-100 bg-orange-50/40">
+                    <div className="shrink-0 border-r border-slate-200 px-3 flex items-center" style={{ width: 160 }}>
+                      <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">Todos</span>
+                    </div>
+                    <div className="flex-1 relative" style={{ height: 34 }}>
+                      {eventosCompartidosDia.filter(e => !e.todo_el_dia).map(evt => {
+                        const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
+                        const Icon = cfg.icon;
+                        const startH = parseHora(evt.hora_inicio, HORA_INICIO);
+                        const endH = parseHora(evt.hora_fin, startH + 1);
+                        const left = Math.max(0, (startH - HORA_INICIO) * PX_POR_HORA);
+                        const width = Math.max(60, (endH - startH) * PX_POR_HORA);
+                        return (
+                          <div
+                            key={evt.id}
+                            style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
+                            onClick={() => openEditModal(evt)}
+                            className={`rounded-md border px-2 flex items-center gap-1.5 cursor-pointer hover:brightness-95 transition-all z-10 ${cfg.bg} ${cfg.border}`}
+                          >
+                            <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
+                            <p className={`text-[10px] font-semibold ${cfg.color} truncate`}>{evt.titulo}</p>
+                            <span className={`text-[9px] ${cfg.color} opacity-60 whitespace-nowrap ml-auto`}>{evt.hora_inicio}–{evt.hora_fin}</span>
+                          </div>
+                        );
+                      })}
+                      {eventosCompartidosDia.filter(e => e.todo_el_dia).map(evt => {
+                        const cfg = tipoBloqueoConfig[evt.tipo] || tipoBloqueoConfig.otro;
+                        const Icon = cfg.icon;
+                        return (
+                          <div
+                            key={evt.id}
+                            onClick={() => openEditModal(evt)}
+                            className={`absolute inset-x-1 inset-y-1 rounded-md border px-2 flex items-center gap-2 cursor-pointer hover:brightness-95 ${cfg.bg} ${cfg.border}`}
+                          >
+                            <Icon className={`h-3 w-3 ${cfg.color}`} />
+                            <span className={`text-[10px] font-semibold ${cfg.color}`}>{evt.titulo}</span>
+                            <span className={`text-[9px] ${cfg.color} opacity-50 ml-auto`}>Todo el día</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Filas de técnicos */}
                 {filteredTecnicos.map((tec, idx) => {
                   const servsDia = getServiciosDia(tec.id);
-                  const evtsDia = getEventosDia(tec.id);
+                  const evtsDia = getEventosDia(tec.id).filter(e => !esEventoCompartido(e));
                   const esp = especialidadBadge[tec.especialidad] || especialidadBadge.ambos;
                   const esHoy = isToday(fecha);
                   const nowH = new Date().getHours() + new Date().getMinutes() / 60;
