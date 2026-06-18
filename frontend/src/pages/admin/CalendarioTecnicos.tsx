@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSocketStore } from '@/store/socketStore';
 import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
@@ -164,7 +165,7 @@ export const CalendarioTecnicos = () => {
     todos_tecnicos: false,
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     const diaStr = format(fecha, 'yyyy-MM-dd');
     const [servRes, tecRes, evtRes] = await Promise.allSettled([
@@ -177,9 +178,22 @@ export const CalendarioTecnicos = () => {
     if (evtRes.status  === 'fulfilled') setEventos(evtRes.value.data.data);
     if (tecRes.status  === 'rejected')  toast.error('Error cargando técnicos');
     setLoading(false);
-  };
+  }, [fecha]);
 
-  useEffect(() => { fetchData(); }, [fecha]);
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const { socket } = useSocketStore();
+  useEffect(() => {
+    if (!socket) return;
+    const onServicioActualizado = (updated: Servicio) => {
+      const diaStr = format(fecha, 'yyyy-MM-dd');
+      if (String(updated.fecha_programada).substring(0, 10) !== diaStr) return;
+      setServicios(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
+      setSelectedServicio(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev);
+    };
+    socket.on('servicio_actualizado', onServicioActualizado);
+    return () => { socket.off('servicio_actualizado', onServicioActualizado); };
+  }, [socket, fecha]);
 
   const sinAsignar = servicios.filter(s => !s.tecnicoId);
 
