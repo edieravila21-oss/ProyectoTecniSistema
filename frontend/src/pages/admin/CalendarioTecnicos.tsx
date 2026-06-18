@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getServicios, crearServicio, cambiarEstadoServicio } from '@/api/servicios';
+import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
@@ -18,7 +18,7 @@ import {
   ChevronLeft, ChevronRight, X, Users, Calendar, MapPin,
   Phone, Wrench, Clock, AlertTriangle, Plus,
   Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff,
-  CheckCircle2, CalendarPlus, Repeat,
+  CheckCircle2, CalendarPlus, Repeat, Pencil, Save,
 } from 'lucide-react';
 import {
   format, addDays, addMonths, isToday,
@@ -116,6 +116,15 @@ export const CalendarioTecnicos = () => {
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [editingEvento, setEditingEvento] = useState<EventoCalendario | null>(null);
+
+  // Edit service state
+  const [editandoServicio, setEditandoServicio] = useState(false);
+  const [savingServicio, setSavingServicio] = useState(false);
+  const [editServicioForm, setEditServicioForm] = useState({
+    fecha_programada: '', hora_inicio: '', hora_fin: '',
+    tipo_servicio: '', descripcion_falla: '', direccion_servicio: '',
+    valor_estimado: '', notas_admin: '',
+  });
 
   // Cita form state
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -366,6 +375,45 @@ export const CalendarioTecnicos = () => {
     if (rep === 'anio') return format(addMonths(d, 12), 'yyyy-MM-dd');
     if (rep === 'siempre') return format(addMonths(d, 24), 'yyyy-MM-dd');
     return desde;
+  };
+
+  const startEditServicio = (s: Servicio) => {
+    setEditServicioForm({
+      fecha_programada: s.fecha_programada ? String(s.fecha_programada).substring(0, 10) : '',
+      hora_inicio: s.hora_inicio || '',
+      hora_fin: s.hora_fin || '',
+      tipo_servicio: s.tipo_servicio || '',
+      descripcion_falla: s.descripcion_falla || '',
+      direccion_servicio: s.direccion_servicio || '',
+      valor_estimado: s.valor_estimado != null ? String(s.valor_estimado) : '',
+      notas_admin: s.notas_admin || '',
+    });
+    setEditandoServicio(true);
+  };
+
+  const handleGuardarServicio = async () => {
+    if (!selectedServicio) return;
+    setSavingServicio(true);
+    try {
+      const payload: Record<string, any> = {
+        descripcion_falla:   editServicioForm.descripcion_falla || null,
+        direccion_servicio:  editServicioForm.direccion_servicio || null,
+        hora_inicio:         editServicioForm.hora_inicio || null,
+        hora_fin:            editServicioForm.hora_fin || null,
+        notas_admin:         editServicioForm.notas_admin || null,
+        tipo_servicio:       (editServicioForm.tipo_servicio as Servicio['tipo_servicio']) || null,
+      };
+      if (editServicioForm.fecha_programada) payload.fecha_programada = editServicioForm.fecha_programada;
+      if (editServicioForm.valor_estimado !== '') payload.valor_estimado = parseFloat(editServicioForm.valor_estimado);
+
+      const { data: res } = await actualizarServicio(selectedServicio.id, payload);
+      setSelectedServicio(res.data);
+      setEditandoServicio(false);
+      toast.success('Servicio actualizado');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Error guardando');
+    } finally { setSavingServicio(false); }
   };
 
   const handleCancelarServicio = async () => {
@@ -801,20 +849,137 @@ export const CalendarioTecnicos = () => {
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => { setSelectedServicio(null); setCancelConfirm(false); }} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <h3 className="font-bold text-slate-800 text-lg">Detalle del Servicio</h3>
-              <button onClick={() => setSelectedServicio(null)} className="p-2 rounded-xl hover:bg-slate-100">
-                <X className="h-4 w-4 text-slate-400" />
-              </button>
+              <h3 className="font-bold text-slate-800 text-lg">
+                {editandoServicio ? 'Editar servicio' : 'Detalle del Servicio'}
+              </h3>
+              <div className="flex items-center gap-1.5">
+                {!editandoServicio && selectedServicio.estado !== 'completado' && selectedServicio.estado !== 'cancelado' && (
+                  <button
+                    onClick={() => startEditServicio(selectedServicio)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-600 hover:bg-blue-50 border border-blue-200 transition-colors"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Editar
+                  </button>
+                )}
+                {editandoServicio && (
+                  <button
+                    onClick={() => setEditandoServicio(false)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button onClick={() => { setSelectedServicio(null); setCancelConfirm(false); setEditandoServicio(false); }} className="p-2 rounded-xl hover:bg-slate-100">
+                  <X className="h-4 w-4 text-slate-400" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <EstadoBadge estado={selectedServicio.estado} />
-                {selectedServicio.origen === 'whatsapp' && (
-                  <span className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-lg font-medium">vía WhatsApp</span>
-                )}
-              </div>
 
+              {/* ── MODO EDICIÓN ── */}
+              {editandoServicio && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tipo de servicio</label>
+                      <select
+                        value={editServicioForm.tipo_servicio}
+                        onChange={e => setEditServicioForm(f => ({ ...f, tipo_servicio: e.target.value }))}
+                        className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      >
+                        <option value="">Sin asignar</option>
+                        <option value="diagnostico">Diagnóstico</option>
+                        <option value="mantenimiento">Mantenimiento</option>
+                        <option value="reparacion">Reparación</option>
+                        <option value="instalacion">Instalación</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-500 block mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={editServicioForm.fecha_programada}
+                        onChange={e => setEditServicioForm(f => ({ ...f, fecha_programada: e.target.value }))}
+                        className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-500 block mb-1">Hora inicio</label>
+                      <input
+                        type="time"
+                        value={editServicioForm.hora_inicio}
+                        onChange={e => setEditServicioForm(f => ({ ...f, hora_inicio: e.target.value }))}
+                        className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-500 block mb-1">Hora fin</label>
+                      <input
+                        type="time"
+                        value={editServicioForm.hora_fin}
+                        onChange={e => setEditServicioForm(f => ({ ...f, hora_fin: e.target.value }))}
+                        className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Dirección</label>
+                    <input
+                      type="text"
+                      value={editServicioForm.direccion_servicio}
+                      onChange={e => setEditServicioForm(f => ({ ...f, direccion_servicio: e.target.value }))}
+                      placeholder="Dirección del servicio"
+                      className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Falla reportada</label>
+                    <textarea
+                      value={editServicioForm.descripcion_falla}
+                      onChange={e => setEditServicioForm(f => ({ ...f, descripcion_falla: e.target.value }))}
+                      rows={3}
+                      placeholder="Descripción de la falla"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Valor estimado</label>
+                    <input
+                      type="number"
+                      value={editServicioForm.valor_estimado}
+                      onChange={e => setEditServicioForm(f => ({ ...f, valor_estimado: e.target.value }))}
+                      placeholder="0"
+                      className="w-full h-9 px-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Notas admin</label>
+                    <textarea
+                      value={editServicioForm.notas_admin}
+                      onChange={e => setEditServicioForm(f => ({ ...f, notas_admin: e.target.value }))}
+                      rows={2}
+                      placeholder="Notas internas"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                  </div>
+                  <button
+                    onClick={handleGuardarServicio}
+                    disabled={savingServicio}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                  >
+                    <Save className="h-4 w-4" />
+                    {savingServicio ? 'Guardando…' : 'Guardar cambios'}
+                  </button>
+                </div>
+              )}
+              {!editandoServicio && (
               <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <EstadoBadge estado={selectedServicio.estado} />
+                  {selectedServicio.origen === 'whatsapp' && (
+                    <span className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-lg font-medium">vía WhatsApp</span>
+                  )}
+                </div>
                 <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl">
                   <Users className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
                   <div>
@@ -940,6 +1105,7 @@ export const CalendarioTecnicos = () => {
                   </div>
                 )}
               </div>
+              )}
             </div>
           </div>
         </div>
