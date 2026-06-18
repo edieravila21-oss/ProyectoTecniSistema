@@ -114,16 +114,20 @@ export const CalendarioTecnico = () => {
     return days;
   };
 
+  const diaStr = (dia: Date) => format(dia, 'yyyy-MM-dd');
+
   const getServiciosDia = (dia: Date) =>
-    servicios.filter(s => s.fecha_programada && isSameDay(new Date(s.fecha_programada), dia));
+    servicios.filter(s => s.fecha_programada && String(s.fecha_programada).substring(0, 10) === diaStr(dia));
 
   const getEventosDia = (dia: Date) =>
-    eventos.filter(e => isSameDay(new Date(e.fecha), dia));
+    eventos.filter(e => String(e.fecha).substring(0, 10) === diaStr(dia));
 
   const serviciosDelDia = getServiciosDia(selectedDay)
     .sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || ''));
 
+  // Deduplica por (titulo+tipo+hora_inicio+hora_fin) por si hay registros duplicados en BD
   const eventosDelDia = getEventosDia(selectedDay)
+    .filter((e, i, arr) => arr.findIndex(x => x.titulo === e.titulo && x.tipo === e.tipo && x.hora_inicio === e.hora_inicio && x.hora_fin === e.hora_fin) === i)
     .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio));
 
   const totalMes = servicios.filter(s => s.fecha_programada && isSameMonth(new Date(s.fecha_programada), mes)).length;
