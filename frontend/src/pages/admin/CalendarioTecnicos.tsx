@@ -571,7 +571,7 @@ export const CalendarioTecnicos = () => {
                 <span className="font-semibold text-slate-700">{s.cliente?.nombre}</span>
                 <span className="text-slate-400 ml-1.5">{s.hora_inicio || '--:--'}</span>
                 {s.fecha_programada && (
-                  <span className="text-amber-600 ml-1.5">{format(new Date(s.fecha_programada), 'd MMM', { locale: es })}</span>
+                  <span className="text-amber-600 ml-1.5">{format(new Date(String(s.fecha_programada).substring(0, 10) + 'T12:00:00'), 'd MMM', { locale: es })}</span>
                 )}
               </button>
             ))}
@@ -854,7 +854,7 @@ export const CalendarioTecnicos = () => {
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase">Fecha Programada</p>
                       <p className="text-sm font-bold text-slate-800 mt-0.5 capitalize">
-                        {format(new Date(selectedServicio.fecha_programada), "EEEE d 'de' MMMM yyyy", { locale: es })}
+                        {format(new Date(String(selectedServicio.fecha_programada).substring(0, 10) + 'T12:00:00'), "EEEE d 'de' MMMM yyyy", { locale: es })}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
                         <Clock className="h-3 w-3" /> {selectedServicio.hora_inicio || '--'} — {selectedServicio.hora_fin || '--'}

@@ -4,8 +4,14 @@ import { es } from 'date-fns/locale';
 export const formatCurrency = (amount: number): string =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(amount);
 
+// Forzar mediodía local para evitar que "2026-06-17T00:00:00Z" → UTC-5 = "16 jun"
+const toLocalNoon = (date: string | Date): Date => {
+  const s = String(date).substring(0, 10); // "YYYY-MM-DD" en UTC
+  return new Date(s + 'T12:00:00');         // mediodía local → sin desfase
+};
+
 export const formatDate = (date: string | Date): string =>
-  format(new Date(date), 'dd/MM/yyyy', { locale: es });
+  format(toLocalNoon(date), 'dd/MM/yyyy', { locale: es });
 
 export const formatDateTime = (date: string | Date): string =>
   format(new Date(date), "dd/MM/yyyy hh:mm a", { locale: es });

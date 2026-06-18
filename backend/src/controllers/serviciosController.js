@@ -101,7 +101,12 @@ const listar = async (req, res, next) => {
       end.setHours(23, 59, 59, 999);
       where.fecha_programada = { gte: start, lte: end };
     } else if (desde && hasta) {
-      where.fecha_programada = { gte: new Date(desde), lte: new Date(hasta) };
+      // Usar rango completo del día igual que la rama "fecha",
+      // para evitar que la comparación punto-a-punto pierda servicios
+      // guardados fuera de la medianoche UTC exacta.
+      const start = new Date(desde + 'T00:00:00Z'); // medianoche UTC
+      const end   = new Date(hasta  + 'T23:59:59.999Z'); // fin del día UTC
+      where.fecha_programada = { gte: start, lte: end };
     }
 
     const [servicios, total, slaConfigs] = await Promise.all([
