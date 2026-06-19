@@ -122,7 +122,14 @@ export const CalendarioTecnicos = () => {
   const [editingEvento, setEditingEvento] = useState<EventoCalendario | null>(null);
 
   // Drag-and-drop state
-  const [dragInfo, setDragInfo] = useState<{ servicio: Servicio; offsetX: number } | null>(null);
+  const [dragInfo, setDragInfo] = useState<{
+    tipo: 'servicio' | 'evento';
+    id: string;
+    tecnicoId: string | null;
+    hora_inicio: string;
+    hora_fin: string;
+    offsetX: number;
+  } | null>(null);
   const [dropPreview, setDropPreview] = useState<{ tecnicoId: string; horaInicio: string; horaFin: string; hasConflict: boolean } | null>(null);
 
   // Trasladar servicio state
@@ -336,7 +343,13 @@ export const CalendarioTecnicos = () => {
 
   const handleDragStart = (e: React.DragEvent, s: Servicio) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDragInfo({ servicio: s, offsetX: e.clientX - rect.left });
+    setDragInfo({ tipo: 'servicio', id: s.id, tecnicoId: s.tecnicoId ?? null, hora_inicio: s.hora_inicio || '08:00', hora_fin: s.hora_fin || '10:00', offsetX: e.clientX - rect.left });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleEventDragStart = (e: React.DragEvent, ev: EventoCalendario) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragInfo({ tipo: 'evento', id: ev.id, tecnicoId: ev.tecnicoId, hora_inicio: ev.hora_inicio, hora_fin: ev.hora_fin, offsetX: e.clientX - rect.left });
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -354,16 +367,16 @@ export const CalendarioTecnicos = () => {
     if (!dragInfo) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    const durMin = dragInfo.servicio.hora_inicio && dragInfo.servicio.hora_fin
-      ? toMin(dragInfo.servicio.hora_fin) - toMin(dragInfo.servicio.hora_inicio)
+    const durMin = dragInfo.hora_inicio && dragInfo.hora_fin
+      ? toMin(dragInfo.hora_fin) - toMin(dragInfo.hora_inicio)
       : 90;
     const { startMin, endMin, valid } = calcDropSlot(e, dragInfo.offsetX, durMin);
     if (!valid) { setDropPreview(null); return; }
 
     const diaStr = format(fecha, 'yyyy-MM-dd');
     const hasConflict = [...servicios, ...eventos].some(item => {
-      const id = (item as Servicio).id;
-      if (id === dragInfo.servicio.id) return false;
+      const itemId = (item as Servicio).id ?? (item as EventoCalendario).id;
+      if (itemId === dragInfo.id) return false;
       const tid = (item as Servicio).tecnicoId ?? (item as EventoCalendario).tecnicoId;
       if (tid !== tecnicoId) return false;
       const fstr = String((item as Servicio).fecha_programada ?? (item as EventoCalendario).fecha).substring(0, 10);
@@ -390,13 +403,14 @@ export const CalendarioTecnicos = () => {
     const WORK_END_MIN = HORA_FIN_LABORAL * 60;
 
     const overlappingServs = servicios.filter(s =>
-      s.id !== dragInfo.servicio.id &&
+      (dragInfo.tipo !== 'servicio' || s.id !== dragInfo.id) &&
       s.tecnicoId === tecnicoId &&
       String(s.fecha_programada).substring(0, 10) === diaStr &&
       s.hora_inicio && s.hora_fin &&
       ini < toMin(s.hora_fin) && fin > toMin(s.hora_inicio),
     );
     const overlappingEvts = eventos.filter(ev =>
+      (dragInfo.tipo !== 'evento' || ev.id !== dragInfo.id) &&
       ev.tecnicoId === tecnicoId &&
       String(ev.fecha).substring(0, 10) === diaStr &&
       ev.hora_inicio && ev.hora_fin &&
@@ -413,9 +427,12 @@ export const CalendarioTecnicos = () => {
     }
 
     try {
-      const ops: Promise<any>[] = [actualizarServicio(dragInfo.servicio.id, { hora_inicio: newHI, hora_fin: newHF })];
-      if (tecnicoId !== dragInfo.servicio.tecnicoId) {
-        ops.push(asignarTecnico(dragInfo.servicio.id, tecnicoId));
+      const ops: Promise<any>[] = [];
+      if (dragInfo.tipo === 'servicio') {
+        ops.push(actualizarServicio(dragInfo.id, { hora_inicio: newHI, hora_fin: newHF }));
+        if (tecnicoId !== dragInfo.tecnicoId) ops.push(asignarTecnico(dragInfo.id, tecnicoId));
+      } else {
+        ops.push(actualizarEventoCalendario(dragInfo.id, { hora_inicio: newHI, hora_fin: newHF }));
       }
       for (const s of overlappingServs) {
         const dur = toMin(s.hora_fin!) - toMin(s.hora_inicio!);
@@ -427,10 +444,11 @@ export const CalendarioTecnicos = () => {
       }
       await Promise.all(ops);
       const moved = overlappingServs.length + overlappingEvts.length;
-      toast.success(`Servicio movido${moved > 0 ? ` — ${moved} bloque${moved !== 1 ? 's' : ''} ajustado${moved !== 1 ? 's' : ''}` : ''}`);
+      const label = dragInfo.tipo === 'servicio' ? 'Servicio' : 'Bloque';
+      toast.success(`${label} movido${moved > 0 ? ` — ${moved} bloque${moved !== 1 ? 's' : ''} ajustado${moved !== 1 ? 's' : ''}` : ''}`);
       fetchData();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Error moviendo servicio');
+      toast.error(err?.response?.data?.error || 'Error al mover el bloque');
     }
   };
 
@@ -997,12 +1015,16 @@ export const CalendarioTecnicos = () => {
                           const endH = parseHora(evt.hora_fin, startH + 1);
                           const left = Math.max(0, (startH - HORA_INICIO) * PX_POR_HORA);
                           const width = Math.max(44, (endH - startH) * PX_POR_HORA);
+                          const isEvtDragging = dragInfo?.tipo === 'evento' && dragInfo.id === evt.id;
                           return (
                             <div
                               key={evt.id}
+                              draggable
+                              onDragStart={e => handleEventDragStart(e, evt)}
+                              onDragEnd={() => { setDragInfo(null); setDropPreview(null); }}
                               style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
                               onClick={() => openEditModal(evt)}
-                              className={`rounded-lg border px-2 py-1 flex flex-col justify-center cursor-pointer group hover:shadow-md hover:brightness-95 hover:z-30 transition-all z-10 relative ${cfg.bg} ${cfg.border}`}
+                              className={`rounded-lg border px-2 py-1 flex flex-col justify-center cursor-grab group hover:shadow-md hover:brightness-95 hover:z-30 transition-all z-10 relative ${cfg.bg} ${cfg.border} ${isEvtDragging ? 'opacity-40 ring-2 ring-blue-400' : ''}`}
                             >
                               <div className="flex items-center gap-1 min-w-0">
                                 <Icon className={`h-3 w-3 ${cfg.color} shrink-0`} />
@@ -1054,7 +1076,7 @@ export const CalendarioTecnicos = () => {
                           const enEjecucion = s.estado === 'en_servicio';
                           const enCamino = s.estado === 'en_camino';
                           const isDraggable = ['pendiente', 'asignado'].includes(s.estado);
-                          const isDragging = dragInfo?.servicio.id === s.id;
+                          const isDragging = dragInfo?.tipo === 'servicio' && dragInfo.id === s.id;
                           return (
                             <button
                               key={s.id}
