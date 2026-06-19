@@ -237,9 +237,9 @@ export const CalendarioTecnicos = () => {
   const getEventosDia = (tecnicoId: string) => {
     const todos = eventos.filter(e => e.tecnicoId === tecnicoId &&
       String(e.fecha).substring(0, 10) === diaFechaStr);
-    // Deduplicate: keep first occurrence of same titulo+hora_inicio+hora_fin combo
+    // Deduplicate: keep first occurrence per titulo (same block type same day = one card)
     return todos.filter((e, i, arr) =>
-      arr.findIndex(x => x.titulo === e.titulo && x.hora_inicio === e.hora_inicio && x.hora_fin === e.hora_fin) === i
+      arr.findIndex(x => x.titulo === e.titulo && x.tipo === e.tipo) === i
     );
   };
 
@@ -261,7 +261,7 @@ export const CalendarioTecnicos = () => {
         String(e.fecha).substring(0, 10) === diaSelStr
       );
       const bloquesDia = bloquesDiaRaw.filter((e, i, arr) =>
-        arr.findIndex(x => x.titulo === e.titulo && x.hora_inicio === e.hora_inicio && x.hora_fin === e.hora_fin) === i
+        arr.findIndex(x => x.titulo === e.titulo && x.tipo === e.tipo) === i
       );
       const horaInicio = parseInt(citaForm.hora_inicio.split(':')[0]) * 60 + parseInt(citaForm.hora_inicio.split(':')[1]);
       const horaFin = parseInt(citaForm.hora_fin.split(':')[0]) * 60 + parseInt(citaForm.hora_fin.split(':')[1]);
