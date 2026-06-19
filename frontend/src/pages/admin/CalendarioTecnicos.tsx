@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSocketStore } from '@/store/socketStore';
-import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio } from '@/api/servicios';
+import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio, subirFoto } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
@@ -116,6 +116,9 @@ export const CalendarioTecnicos = () => {
   const [modalMode, setModalMode] = useState<ModalMode>('bloqueo');
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelMotivo, setCancelMotivo] = useState('');
+  const [cancelFotos, setCancelFotos] = useState<File[]>([]);
+  const [cancelando, setCancelando] = useState(false);
   const [editingEvento, setEditingEvento] = useState<EventoCalendario | null>(null);
 
   // Edit service state
@@ -432,14 +435,27 @@ export const CalendarioTecnicos = () => {
 
   const handleCancelarServicio = async () => {
     if (!selectedServicio) return;
+    setCancelando(true);
     try {
-      await cambiarEstadoServicio(selectedServicio.id, 'cancelado');
+      await cambiarEstadoServicio(selectedServicio.id, 'cancelado',
+        cancelMotivo.trim() ? { motivo_cancelacion: cancelMotivo.trim() } : undefined,
+      );
+      for (const file of cancelFotos) {
+        const fd = new FormData();
+        fd.append('foto', file);
+        fd.append('tipo', 'cancelacion');
+        await subirFoto(selectedServicio.id, fd);
+      }
       toast.success('Servicio cancelado');
       setSelectedServicio(null);
       setCancelConfirm(false);
+      setCancelMotivo('');
+      setCancelFotos([]);
       fetchData();
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Error cancelando servicio');
+    } finally {
+      setCancelando(false);
     }
   };
 
@@ -1114,27 +1130,73 @@ export const CalendarioTecnicos = () => {
                   <div className="border border-red-100 bg-red-50/40 rounded-xl p-4">
                     {!cancelConfirm ? (
                       <button
-                        onClick={() => setCancelConfirm(true)}
+                        onClick={() => { setCancelConfirm(true); setCancelMotivo(''); setCancelFotos([]); }}
                         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 hover:border-red-300 transition-colors"
                       >
                         <Ban className="h-4 w-4" /> Cancelar servicio
                       </button>
                     ) : (
                       <div className="space-y-3">
-                        <p className="text-sm font-semibold text-red-700">¿Confirmar cancelación?</p>
+                        <p className="text-sm font-semibold text-red-700">Cancelar servicio</p>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-red-400 uppercase">Motivo de cancelación</label>
+                          <textarea
+                            value={cancelMotivo}
+                            onChange={e => setCancelMotivo(e.target.value)}
+                            placeholder="Describe el motivo de la cancelación..."
+                            rows={3}
+                            className="mt-1 w-full text-sm rounded-lg border border-red-200 bg-white px-3 py-2 text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-red-400 uppercase">Fotos (opcional)</label>
+                          <label className="mt-1 flex items-center gap-2 cursor-pointer w-full px-3 py-2 rounded-lg border border-dashed border-red-200 bg-white hover:bg-red-50 transition-colors">
+                            <span className="text-xs text-slate-500">
+                              {cancelFotos.length === 0 ? 'Adjuntar fotos...' : `${cancelFotos.length} foto${cancelFotos.length !== 1 ? 's' : ''} seleccionada${cancelFotos.length !== 1 ? 's' : ''}`}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={e => setCancelFotos(Array.from(e.target.files ?? []))}
+                            />
+                          </label>
+                          {cancelFotos.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {cancelFotos.map((f, i) => (
+                                <div key={i} className="relative group">
+                                  <img
+                                    src={URL.createObjectURL(f)}
+                                    className="h-14 w-14 object-cover rounded-lg border border-red-100"
+                                  />
+                                  <button
+                                    onClick={() => setCancelFotos(prev => prev.filter((_, j) => j !== i))}
+                                    className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
                         <p className="text-xs text-red-400">Esta acción no se puede deshacer.</p>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => setCancelConfirm(false)}
-                            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                            onClick={() => { setCancelConfirm(false); setCancelMotivo(''); setCancelFotos([]); }}
+                            disabled={cancelando}
+                            className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
                           >
                             Volver
                           </button>
                           <button
                             onClick={handleCancelarServicio}
-                            className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
+                            disabled={cancelando || !cancelMotivo.trim()}
+                            className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Sí, cancelar
+                            {cancelando ? 'Cancelando...' : 'Sí, cancelar'}
                           </button>
                         </div>
                       </div>

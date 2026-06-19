@@ -13,8 +13,8 @@ export const crearServicio = (data: Partial<Servicio>) =>
 export const actualizarServicio = (id: string, data: Partial<Servicio>) =>
   api.put<ApiResponse<Servicio>>(`/servicios/${id}`, data);
 
-export const cambiarEstadoServicio = (id: string, estado: string) =>
-  api.patch<ApiResponse<Servicio>>(`/servicios/${id}/estado`, { estado });
+export const cambiarEstadoServicio = (id: string, estado: string, extra?: { motivo_cancelacion?: string }) =>
+  api.patch<ApiResponse<Servicio>>(`/servicios/${id}/estado`, { estado, ...extra });
 
 export const asignarTecnico = (id: string, tecnico_id: string) =>
   api.patch<ApiResponse<Servicio>>(`/servicios/${id}/asignar`, { tecnico_id });

@@ -375,7 +375,7 @@ const actualizar = async (req, res, next) => {
 
 const cambiarEstado = async (req, res, next) => {
   try {
-    const { estado } = req.body;
+    const { estado, motivo_cancelacion } = req.body;
     const servicio = await prisma.servicio.findUnique({
       where: { id: req.params.id },
       include: {
@@ -436,6 +436,7 @@ const cambiarEstado = async (req, res, next) => {
     if (estado === 'en_camino') updateData.fecha_en_camino = new Date();
     if (estado === 'en_servicio') updateData.fecha_inicio_real = new Date();
     if (estado === 'completado') updateData.fecha_fin_real = new Date();
+    if (estado === 'cancelado' && motivo_cancelacion) updateData.notas_admin = motivo_cancelacion;
 
     const actualizado = await prisma.servicio.update({
       where: { id: req.params.id },
@@ -452,7 +453,9 @@ const cambiarEstado = async (req, res, next) => {
       data: {
         servicioId: req.params.id,
         tipo: estado === 'en_servicio' ? 'en_servicio' : estado === 'en_camino' ? 'en_camino' : estado,
-        descripcion: `Estado cambiado a ${estado}`,
+        descripcion: estado === 'cancelado' && motivo_cancelacion
+          ? `Servicio cancelado. Motivo: ${motivo_cancelacion}`
+          : `Estado cambiado a ${estado}`,
         usuarioId: req.usuario.id,
       },
     });
