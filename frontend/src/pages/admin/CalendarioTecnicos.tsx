@@ -123,6 +123,8 @@ export const CalendarioTecnicos = () => {
 
   // Trasladar servicio state
   const [trasladando, setTrasladando] = useState(false);
+  const [trasladandoTecnico, setTrasladandoTecnico] = useState<{ id: string; nombre: string } | null>(null);
+  const [trasladandoSlot, setTrasladandoSlot] = useState<string | null>(null);
   const [trasladandoId, setTrasladandoId] = useState<string | null>(null);
 
   // Edit service state
@@ -252,47 +254,65 @@ export const CalendarioTecnicos = () => {
     }).sort((a, b) => (a.libre ? -1 : 1) - (b.libre ? -1 : 1) || a.servsDia - b.servsDia);
   };
 
-  // Returns technician availability for a given service (for traslado panel)
-  const getDisponibilidadParaServicio = (s: Servicio) => {
+  const toMin = (h: string) => parseInt(h.split(':')[0]) * 60 + parseInt(h.split(':')[1]);
+  const toHora = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  // Returns time slots for a technician on the service day with the same duration
+  const getSlotsParaTecnico = (tecnicoId: string, s: Servicio) => {
     const diaStr = String(s.fecha_programada).substring(0, 10);
-    const horaInicio = s.hora_inicio ? parseInt(s.hora_inicio.split(':')[0]) * 60 + parseInt(s.hora_inicio.split(':')[1]) : null;
-    const horaFin = s.hora_fin ? parseInt(s.hora_fin.split(':')[0]) * 60 + parseInt(s.hora_fin.split(':')[1]) : null;
-    return tecnicos
-      .filter(t => t.id !== s.tecnicoId)
-      .map(t => {
-        const servsDia = servicios.filter(sv =>
-          sv.tecnicoId === t.id && String(sv.fecha_programada).substring(0, 10) === diaStr && sv.id !== s.id,
-        );
-        const bloquesDia = eventos.filter(e => e.tecnicoId === t.id && String(e.fecha).substring(0, 10) === diaStr);
-        let conflicto = false;
-        let bloqueado = false;
-        if (horaInicio !== null && horaFin !== null) {
-          conflicto = servsDia.some(sv => {
-            if (!sv.hora_inicio || !sv.hora_fin) return false;
-            const si = parseInt(sv.hora_inicio.split(':')[0]) * 60 + parseInt(sv.hora_inicio.split(':')[1]);
-            const sf = parseInt(sv.hora_fin.split(':')[0]) * 60 + parseInt(sv.hora_fin.split(':')[1]);
-            return horaInicio < sf && horaFin > si;
-          });
-          bloqueado = bloquesDia.some(e => e.todo_el_dia || (() => {
-            if (!e.hora_inicio || !e.hora_fin) return false;
-            const ei = parseInt(e.hora_inicio.split(':')[0]) * 60 + parseInt(e.hora_inicio.split(':')[1]);
-            const ef = parseInt(e.hora_fin.split(':')[0]) * 60 + parseInt(e.hora_fin.split(':')[1]);
-            return horaInicio < ef && horaFin > ei;
-          })());
-        }
-        return { tecnico: t, servsDia: servsDia.length, conflicto, bloqueado, libre: !conflicto && !bloqueado };
-      })
-      .sort((a, b) => (a.libre ? -1 : 1) - (b.libre ? -1 : 1) || a.servsDia - b.servsDia);
+    const duracion = s.hora_inicio && s.hora_fin ? toMin(s.hora_fin) - toMin(s.hora_inicio) : 90;
+    const WORK_START = 7 * 60;   // 07:00
+    const WORK_END   = 19 * 60;  // 19:00
+
+    const ocupados = [
+      ...servicios
+        .filter(sv => sv.tecnicoId === tecnicoId && String(sv.fecha_programada).substring(0, 10) === diaStr && sv.id !== s.id && sv.hora_inicio && sv.hora_fin)
+        .map(sv => ({ ini: toMin(sv.hora_inicio!), fin: toMin(sv.hora_fin!) })),
+      ...eventos
+        .filter(e => e.tecnicoId === tecnicoId && String(e.fecha).substring(0, 10) === diaStr)
+        .map(e => e.todo_el_dia ? { ini: 0, fin: 24 * 60 } : { ini: toMin(e.hora_inicio), fin: toMin(e.hora_fin) }),
+    ];
+
+    const slots: { horaInicio: string; horaFin: string; libre: boolean }[] = [];
+    for (let start = WORK_START; start + duracion <= WORK_END; start += 30) {
+      const end = start + duracion;
+      const libre = !ocupados.some(o => start < o.fin && end > o.ini);
+      slots.push({ horaInicio: toHora(start), horaFin: toHora(end), libre });
+    }
+    return slots;
   };
 
-  const handleTrasladar = async (tecnicoId: string) => {
-    if (!selectedServicio) return;
-    setTrasladandoId(tecnicoId);
+  // List all other technicians with their service count for that day
+  const getTecnicosParaTraslado = (s: Servicio) => {
+    const diaStr = String(s.fecha_programada).substring(0, 10);
+    return tecnicos
+      .filter(t => t.id !== s.tecnicoId)
+      .map(t => ({
+        tecnico: t,
+        servsDia: servicios.filter(sv => sv.tecnicoId === t.id && String(sv.fecha_programada).substring(0, 10) === diaStr && sv.id !== s.id).length,
+      }))
+      .sort((a, b) => a.servsDia - b.servsDia);
+  };
+
+  const resetTraslado = () => {
+    setTrasladando(false);
+    setTrasladandoTecnico(null);
+    setTrasladandoSlot(null);
+  };
+
+  const handleConfirmarTraslado = async () => {
+    if (!selectedServicio || !trasladandoTecnico || !trasladandoSlot) return;
+    const duracion = selectedServicio.hora_inicio && selectedServicio.hora_fin
+      ? toMin(selectedServicio.hora_fin) - toMin(selectedServicio.hora_inicio)
+      : 90;
+    const nuevaHoraFin = toHora(toMin(trasladandoSlot) + duracion);
+    setTrasladandoId(trasladandoTecnico.id);
     try {
-      const { data: res } = await asignarTecnico(selectedServicio.id, tecnicoId);
+      await actualizarServicio(selectedServicio.id, { hora_inicio: trasladandoSlot, hora_fin: nuevaHoraFin });
+      const { data: res } = await asignarTecnico(selectedServicio.id, trasladandoTecnico.id);
       setSelectedServicio(res.data);
-      setTrasladando(false);
-      toast.success('Servicio trasladado correctamente');
+      resetTraslado();
+      toast.success(`Servicio trasladado a ${trasladandoTecnico.nombre} — ${trasladandoSlot}`);
       fetchData();
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Error trasladando servicio');
@@ -1181,33 +1201,29 @@ export const CalendarioTecnicos = () => {
                 {/* Trasladar servicio */}
                 {['pendiente', 'asignado'].includes(selectedServicio.estado) && !cancelConfirm && (
                   <div className="border border-blue-100 bg-blue-50/40 rounded-xl p-4">
-                    {!trasladando ? (
+                    {!trasladando && (
                       <button
-                        onClick={() => setTrasladando(true)}
+                        onClick={() => { setTrasladando(true); setTrasladandoTecnico(null); setTrasladandoSlot(null); }}
                         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-blue-200 text-blue-600 text-sm font-semibold hover:bg-blue-50 hover:border-blue-300 transition-colors"
                       >
                         <Users className="h-4 w-4" /> Trasladar a otro técnico
                       </button>
-                    ) : (
+                    )}
+
+                    {/* Paso 1: elegir técnico */}
+                    {trasladando && !trasladandoTecnico && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold text-blue-700">Seleccionar técnico</p>
-                          <button onClick={() => setTrasladando(false)} className="text-slate-400 hover:text-slate-600">
-                            <X className="h-4 w-4" />
-                          </button>
+                          <p className="text-sm font-semibold text-blue-700">¿A qué técnico?</p>
+                          <button onClick={resetTraslado} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
                         </div>
-                        <p className="text-[11px] text-slate-500">Solo se muestran técnicos sin conflicto en el mismo horario.</p>
-                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                          {getDisponibilidadParaServicio(selectedServicio).map(({ tecnico, servsDia, conflicto, bloqueado, libre }) => (
+                        <p className="text-[11px] text-slate-500">Selecciona el técnico — luego elige el horario disponible.</p>
+                        <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                          {getTecnicosParaTraslado(selectedServicio).map(({ tecnico, servsDia }) => (
                             <button
                               key={tecnico.id}
-                              disabled={!libre || trasladandoId !== null}
-                              onClick={() => handleTrasladar(tecnico.id)}
-                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                                libre
-                                  ? 'border-emerald-200 bg-white hover:bg-emerald-50 hover:border-emerald-300'
-                                  : 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
-                              }`}
+                              onClick={() => setTrasladandoTecnico({ id: tecnico.id, nombre: tecnico.nombre })}
+                              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50 text-left transition-all"
                             >
                               <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
                                 {tecnico.nombre.charAt(0).toUpperCase()}
@@ -1216,20 +1232,52 @@ export const CalendarioTecnicos = () => {
                                 <p className="text-sm font-semibold text-slate-800 truncate">{tecnico.nombre}</p>
                                 <p className="text-[10px] text-slate-400">{servsDia} servicio{servsDia !== 1 ? 's' : ''} ese día</p>
                               </div>
-                              <div className="shrink-0">
-                                {trasladandoId === tecnico.id ? (
-                                  <span className="text-[10px] text-blue-500 font-bold">Asignando…</span>
-                                ) : libre ? (
-                                  <span className="text-[10px] font-bold text-emerald-600">Disponible</span>
-                                ) : conflicto ? (
-                                  <span className="text-[10px] font-bold text-red-400">Conflicto</span>
-                                ) : bloqueado ? (
-                                  <span className="text-[10px] font-bold text-amber-500">Bloqueado</span>
-                                ) : null}
-                              </div>
+                              <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
                             </button>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {/* Paso 2: elegir slot */}
+                    {trasladando && trasladandoTecnico && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => { setTrasladandoTecnico(null); setTrasladandoSlot(null); }} className="text-slate-400 hover:text-slate-600">
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <p className="text-sm font-semibold text-blue-700 flex-1 truncate">{trasladandoTecnico.nombre}</p>
+                          <button onClick={resetTraslado} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+                        </div>
+                        <p className="text-[11px] text-slate-500">Elige un horario disponible para este día.</p>
+                        <div className="grid grid-cols-3 gap-1.5 max-h-52 overflow-y-auto">
+                          {getSlotsParaTecnico(trasladandoTecnico.id, selectedServicio).map(({ horaInicio, horaFin, libre }) => (
+                            <button
+                              key={horaInicio}
+                              disabled={!libre}
+                              onClick={() => setTrasladandoSlot(prev => prev === horaInicio ? null : horaInicio)}
+                              className={`px-2 py-1.5 rounded-lg text-[10px] font-semibold border transition-all ${
+                                !libre
+                                  ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed'
+                                  : trasladandoSlot === horaInicio
+                                  ? 'bg-blue-500 border-blue-500 text-white'
+                                  : 'bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                              }`}
+                            >
+                              {horaInicio}
+                              {!libre && <span className="block text-[8px] opacity-60">ocupado</span>}
+                            </button>
+                          ))}
+                        </div>
+                        {trasladandoSlot && (
+                          <button
+                            onClick={handleConfirmarTraslado}
+                            disabled={trasladandoId !== null}
+                            className="w-full py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                          >
+                            {trasladandoId ? 'Trasladando…' : `Confirmar — ${trasladandoSlot}`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
