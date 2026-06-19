@@ -138,6 +138,9 @@ export const CalendarioTecnicos = () => {
 
   // Cita form state
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [clienteBusqueda, setClienteBusqueda] = useState('');
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null);
+  const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [slaDuraciones, setSlaDuraciones] = useState<Record<string, number>>({});
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
@@ -203,6 +206,18 @@ export const CalendarioTecnicos = () => {
     socket.on('servicio_actualizado', onServicioActualizado);
     return () => { socket.off('servicio_actualizado', onServicioActualizado); };
   }, [socket, fecha]);
+
+  useEffect(() => {
+    if (!clienteBusqueda.trim()) { setClientes([]); return; }
+    setBuscandoCliente(true);
+    const t = setTimeout(() => {
+      getClientes({ buscar: clienteBusqueda, limit: '30' })
+        .then(r => setClientes(r.data.data))
+        .catch(() => {})
+        .finally(() => setBuscandoCliente(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [clienteBusqueda]);
 
   const sinAsignar = servicios.filter(s => !s.tecnicoId);
 
@@ -337,9 +352,11 @@ export const CalendarioTecnicos = () => {
       repeticion: 'ninguna',
       todos_tecnicos: false,
     });
-    setCitaForm(f => ({ ...f, tecnicoId: tecnicoId || '', fecha_programada: fechaStr }));
+    setCitaForm(f => ({ ...f, tecnicoId: tecnicoId || '', fecha_programada: fechaStr, clienteId: '', equipoId: '' }));
+    setClienteBusqueda('');
+    setClienteSeleccionado(null);
+    setClientes([]);
     if (mode === 'cita') {
-      getClientes({}).then(r => setClientes(r.data.data)).catch(() => {});
       getSlaConfigs().then(r => {
         const map: Record<string, number> = {};
         r.data.data.forEach(s => { map[s.tipo_servicio] = s.max_tiempo_ejecucion_min; });
@@ -367,8 +384,11 @@ export const CalendarioTecnicos = () => {
     setShowModal(true);
   };
 
-  const handleClienteCitaChange = async (clienteId: string) => {
+  const handleClienteCitaChange = async (clienteId: string, cliente?: Cliente) => {
     setCitaForm(f => ({ ...f, clienteId, equipoId: '', direccion_servicio: '' }));
+    if (cliente) setClienteSeleccionado(cliente);
+    setClienteBusqueda('');
+    setClientes([]);
     setClienteDirecciones([]);
     if (clienteId) {
       try {
@@ -384,8 +404,6 @@ export const CalendarioTecnicos = () => {
         if (principal) {
           setCitaForm(f => ({ ...f, clienteId, direccion_servicio: principal.direccion }));
         } else {
-          // Fallback a direccion_principal del cliente
-          const cliente = clientes.find(c => c.id === clienteId);
           if (cliente?.direccion_principal) setCitaForm(f => ({ ...f, clienteId, direccion_servicio: cliente.direccion_principal || '' }));
         }
       } catch { setEquipos([]); }
@@ -399,10 +417,7 @@ export const CalendarioTecnicos = () => {
     try {
       const { data: res } = await crearCliente(nuevoClienteForm);
       const nuevo = res.data;
-      // Refrescar lista y seleccionar el nuevo cliente automáticamente
-      const { data: lista } = await getClientes({});
-      setClientes(lista.data);
-      await handleClienteCitaChange(nuevo.id);
+      await handleClienteCitaChange(nuevo.id, nuevo);
       setNuevoClienteForm({ nombre: '', telefono: '', direccion_principal: '' });
       setShowNuevoCliente(false);
       toast.success(`Cliente ${nuevo.nombre} creado`);
@@ -1251,7 +1266,7 @@ export const CalendarioTecnicos = () => {
                         </div>
                         <p className="text-[11px] text-slate-500">Elige un horario disponible para este día.</p>
                         <div className="grid grid-cols-3 gap-1.5 max-h-52 overflow-y-auto">
-                          {getSlotsParaTecnico(trasladandoTecnico.id, selectedServicio).map(({ horaInicio, horaFin, libre }) => (
+                          {getSlotsParaTecnico(trasladandoTecnico.id, selectedServicio).map(({ horaInicio, libre }) => (
                             <button
                               key={horaInicio}
                               disabled={!libre}
@@ -1541,12 +1556,55 @@ export const CalendarioTecnicos = () => {
                   {/* Cliente y equipo */}
                   <div>
                     <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Cliente *</label>
-                    <select value={citaForm.clienteId}
-                      onChange={e => handleClienteCitaChange(e.target.value)}
-                      className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                      <option value="">Seleccionar cliente</option>
-                      {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} — {c.telefono}</option>)}
-                    </select>
+
+                    {/* Cliente ya seleccionado */}
+                    {clienteSeleccionado ? (
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-200 bg-blue-50">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-800 truncate">{clienteSeleccionado.nombre}</p>
+                          {clienteSeleccionado.telefono && <p className="text-[11px] text-slate-500">{clienteSeleccionado.telefono}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setClienteSeleccionado(null); setClienteBusqueda(''); setCitaForm(f => ({ ...f, clienteId: '', equipoId: '' })); setEquipos([]); }}
+                          className="text-slate-400 hover:text-slate-600 shrink-0"
+                        ><X className="h-4 w-4" /></button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={clienteBusqueda}
+                          onChange={e => setClienteBusqueda(e.target.value)}
+                          placeholder="Buscar por nombre o teléfono..."
+                          className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                        {buscandoCliente && (
+                          <span className="absolute right-3 top-3 text-[10px] text-slate-400">Buscando…</span>
+                        )}
+                        {clientes.length > 0 && (
+                          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                            {clientes.map(c => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => handleClienteCitaChange(c.id, c)}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 text-left border-b border-slate-50 last:border-0"
+                              >
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-800">{c.nombre}</p>
+                                  {c.telefono && <p className="text-[11px] text-slate-400">{c.telefono}</p>}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {clienteBusqueda.trim().length > 1 && !buscandoCliente && clientes.length === 0 && (
+                          <p className="mt-1 text-[11px] text-slate-400 px-1">Sin resultados para "{clienteBusqueda}"</p>
+                        )}
+                      </div>
+                    )}
+
 
                     {/* Acceso rápido para crear cliente */}
                     {!showNuevoCliente ? (
