@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSocketStore } from '@/store/socketStore';
-import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio, subirFoto } from '@/api/servicios';
+import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio, subirFoto, asignarTecnico } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
@@ -120,6 +120,10 @@ export const CalendarioTecnicos = () => {
   const [cancelFotos, setCancelFotos] = useState<File[]>([]);
   const [cancelando, setCancelando] = useState(false);
   const [editingEvento, setEditingEvento] = useState<EventoCalendario | null>(null);
+
+  // Trasladar servicio state
+  const [trasladando, setTrasladando] = useState(false);
+  const [trasladandoId, setTrasladandoId] = useState<string | null>(null);
 
   // Edit service state
   const [editandoServicio, setEditandoServicio] = useState(false);
@@ -246,6 +250,55 @@ export const CalendarioTecnicos = () => {
       })());
       return { tecnico: t, servsDia: servsDia.length, bloquesDia: bloquesDia.length, conflicto, bloqueado, libre: !conflicto && !bloqueado };
     }).sort((a, b) => (a.libre ? -1 : 1) - (b.libre ? -1 : 1) || a.servsDia - b.servsDia);
+  };
+
+  // Returns technician availability for a given service (for traslado panel)
+  const getDisponibilidadParaServicio = (s: Servicio) => {
+    const diaStr = String(s.fecha_programada).substring(0, 10);
+    const horaInicio = s.hora_inicio ? parseInt(s.hora_inicio.split(':')[0]) * 60 + parseInt(s.hora_inicio.split(':')[1]) : null;
+    const horaFin = s.hora_fin ? parseInt(s.hora_fin.split(':')[0]) * 60 + parseInt(s.hora_fin.split(':')[1]) : null;
+    return tecnicos
+      .filter(t => t.id !== s.tecnicoId)
+      .map(t => {
+        const servsDia = servicios.filter(sv =>
+          sv.tecnicoId === t.id && String(sv.fecha_programada).substring(0, 10) === diaStr && sv.id !== s.id,
+        );
+        const bloquesDia = eventos.filter(e => e.tecnicoId === t.id && String(e.fecha).substring(0, 10) === diaStr);
+        let conflicto = false;
+        let bloqueado = false;
+        if (horaInicio !== null && horaFin !== null) {
+          conflicto = servsDia.some(sv => {
+            if (!sv.hora_inicio || !sv.hora_fin) return false;
+            const si = parseInt(sv.hora_inicio.split(':')[0]) * 60 + parseInt(sv.hora_inicio.split(':')[1]);
+            const sf = parseInt(sv.hora_fin.split(':')[0]) * 60 + parseInt(sv.hora_fin.split(':')[1]);
+            return horaInicio < sf && horaFin > si;
+          });
+          bloqueado = bloquesDia.some(e => e.todo_el_dia || (() => {
+            if (!e.hora_inicio || !e.hora_fin) return false;
+            const ei = parseInt(e.hora_inicio.split(':')[0]) * 60 + parseInt(e.hora_inicio.split(':')[1]);
+            const ef = parseInt(e.hora_fin.split(':')[0]) * 60 + parseInt(e.hora_fin.split(':')[1]);
+            return horaInicio < ef && horaFin > ei;
+          })());
+        }
+        return { tecnico: t, servsDia: servsDia.length, conflicto, bloqueado, libre: !conflicto && !bloqueado };
+      })
+      .sort((a, b) => (a.libre ? -1 : 1) - (b.libre ? -1 : 1) || a.servsDia - b.servsDia);
+  };
+
+  const handleTrasladar = async (tecnicoId: string) => {
+    if (!selectedServicio) return;
+    setTrasladandoId(tecnicoId);
+    try {
+      const { data: res } = await asignarTecnico(selectedServicio.id, tecnicoId);
+      setSelectedServicio(res.data);
+      setTrasladando(false);
+      toast.success('Servicio trasladado correctamente');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Error trasladando servicio');
+    } finally {
+      setTrasladandoId(null);
+    }
   };
 
   const openCreateModal = (tecnicoId?: string, dia?: Date, mode: ModalMode = 'bloqueo') => {
@@ -899,7 +952,7 @@ export const CalendarioTecnicos = () => {
       {/* Service detail slide-over */}
       {selectedServicio && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => { setSelectedServicio(null); setCancelConfirm(false); }} />
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => { setSelectedServicio(null); setCancelConfirm(false); setTrasladando(false); }} />
           <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-slate-800 text-lg">
@@ -922,7 +975,7 @@ export const CalendarioTecnicos = () => {
                     Cancelar
                   </button>
                 )}
-                <button onClick={() => { setSelectedServicio(null); setCancelConfirm(false); setEditandoServicio(false); }} className="p-2 rounded-xl hover:bg-slate-100">
+                <button onClick={() => { setSelectedServicio(null); setCancelConfirm(false); setEditandoServicio(false); setTrasladando(false); }} className="p-2 rounded-xl hover:bg-slate-100">
                   <X className="h-4 w-4 text-slate-400" />
                 </button>
               </div>
@@ -1124,6 +1177,63 @@ export const CalendarioTecnicos = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Trasladar servicio */}
+                {['pendiente', 'asignado'].includes(selectedServicio.estado) && !cancelConfirm && (
+                  <div className="border border-blue-100 bg-blue-50/40 rounded-xl p-4">
+                    {!trasladando ? (
+                      <button
+                        onClick={() => setTrasladando(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-blue-200 text-blue-600 text-sm font-semibold hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                      >
+                        <Users className="h-4 w-4" /> Trasladar a otro técnico
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-blue-700">Seleccionar técnico</p>
+                          <button onClick={() => setTrasladando(false)} className="text-slate-400 hover:text-slate-600">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-slate-500">Solo se muestran técnicos sin conflicto en el mismo horario.</p>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {getDisponibilidadParaServicio(selectedServicio).map(({ tecnico, servsDia, conflicto, bloqueado, libre }) => (
+                            <button
+                              key={tecnico.id}
+                              disabled={!libre || trasladandoId !== null}
+                              onClick={() => handleTrasladar(tecnico.id)}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                                libre
+                                  ? 'border-emerald-200 bg-white hover:bg-emerald-50 hover:border-emerald-300'
+                                  : 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
+                              }`}
+                            >
+                              <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
+                                {tecnico.nombre.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-slate-800 truncate">{tecnico.nombre}</p>
+                                <p className="text-[10px] text-slate-400">{servsDia} servicio{servsDia !== 1 ? 's' : ''} ese día</p>
+                              </div>
+                              <div className="shrink-0">
+                                {trasladandoId === tecnico.id ? (
+                                  <span className="text-[10px] text-blue-500 font-bold">Asignando…</span>
+                                ) : libre ? (
+                                  <span className="text-[10px] font-bold text-emerald-600">Disponible</span>
+                                ) : conflicto ? (
+                                  <span className="text-[10px] font-bold text-red-400">Conflicto</span>
+                                ) : bloqueado ? (
+                                  <span className="text-[10px] font-bold text-amber-500">Bloqueado</span>
+                                ) : null}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Cancelar servicio */}
                 {['pendiente', 'asignado', 'en_camino', 'en_servicio'].includes(selectedServicio.estado) && (
