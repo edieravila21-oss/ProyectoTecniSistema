@@ -15,3 +15,6 @@ export const eliminarEventoCalendario = (id: string) =>
 
 export const crearEventosCalendarioBulk = (eventos: Partial<EventoCalendario>[]) =>
   api.post<ApiResponse<{ count: number }>>('/calendario/bulk', { eventos });
+
+export const limpiarEventosDuplicados = () =>
+  api.delete<ApiResponse<{ eliminados: number; message: string }>>('/calendario/duplicados');

@@ -6,7 +6,7 @@ import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/cli
 import { getSlaConfigs } from '@/api/slaConfig';
 import {
   getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
-  eliminarEventoCalendario, crearEventosCalendarioBulk,
+  eliminarEventoCalendario, crearEventosCalendarioBulk, limpiarEventosDuplicados,
 } from '@/api/calendario';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -210,6 +210,9 @@ export const CalendarioTecnicos = () => {
     socket.on('servicio_actualizado', onServicioActualizado);
     return () => { socket.off('servicio_actualizado', onServicioActualizado); };
   }, [socket, fecha]);
+
+  // One-time cleanup of duplicate calendar blocks on mount
+  useEffect(() => { limpiarEventosDuplicados().catch(() => {}); }, []);
 
   useEffect(() => {
     if (!clienteBusqueda.trim()) { setClientes([]); return; }

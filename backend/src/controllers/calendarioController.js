@@ -263,4 +263,38 @@ const bulk = async (req, res, next) => {
   }
 };
 
-module.exports = { listar, crear, actualizar, eliminar, disponibilidad, bulk };
+// DELETE /api/calendario/duplicados — admin only, removes duplicate events keeping newest per technician/day/titulo/tipo
+const limpiarDuplicados = async (req, res, next) => {
+  try {
+    if (req.usuario.rol !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Solo admin puede ejecutar esta acción' });
+    }
+
+    // Find all events grouped by tecnicoId + date + titulo + tipo
+    const todos = await prisma.eventoCalendario.findMany({ orderBy: { createdAt: 'desc' } });
+
+    const vistos = new Map();
+    const aEliminar = [];
+
+    for (const ev of todos) {
+      const fecha = String(ev.fecha).substring(0, 10);
+      const clave = `${ev.tecnicoId}|${fecha}|${ev.titulo}|${ev.tipo}`;
+      if (vistos.has(clave)) {
+        aEliminar.push(ev.id);
+      } else {
+        vistos.set(clave, ev.id);
+      }
+    }
+
+    if (aEliminar.length === 0) {
+      return res.json({ success: true, eliminados: 0, message: 'No hay duplicados' });
+    }
+
+    const { count } = await prisma.eventoCalendario.deleteMany({ where: { id: { in: aEliminar } } });
+    res.json({ success: true, eliminados: count, message: `Se eliminaron ${count} registros duplicados` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { listar, crear, actualizar, eliminar, disponibilidad, bulk, limpiarDuplicados };
