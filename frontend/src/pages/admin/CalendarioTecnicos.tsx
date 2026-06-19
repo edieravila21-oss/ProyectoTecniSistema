@@ -234,9 +234,14 @@ export const CalendarioTecnicos = () => {
     servicios.filter(s => s.tecnicoId === tecnicoId && s.fecha_programada &&
       String(s.fecha_programada).substring(0, 10) === diaFechaStr);
 
-  const getEventosDia = (tecnicoId: string) =>
-    eventos.filter(e => e.tecnicoId === tecnicoId &&
+  const getEventosDia = (tecnicoId: string) => {
+    const todos = eventos.filter(e => e.tecnicoId === tecnicoId &&
       String(e.fecha).substring(0, 10) === diaFechaStr);
+    // Deduplicate: keep first occurrence of same titulo+hora_inicio+hora_fin combo
+    return todos.filter((e, i, arr) =>
+      arr.findIndex(x => x.titulo === e.titulo && x.hora_inicio === e.hora_inicio && x.hora_fin === e.hora_fin) === i
+    );
+  };
 
   const filteredTecnicos = selectedTecnico
     ? tecnicos.filter(t => t.id === selectedTecnico)
@@ -251,9 +256,12 @@ export const CalendarioTecnicos = () => {
         s.fecha_programada &&
         String(s.fecha_programada).substring(0, 10) === diaSelStr
       );
-      const bloquesDia = eventos.filter(e =>
+      const bloquesDiaRaw = eventos.filter(e =>
         e.tecnicoId === t.id &&
         String(e.fecha).substring(0, 10) === diaSelStr
+      );
+      const bloquesDia = bloquesDiaRaw.filter((e, i, arr) =>
+        arr.findIndex(x => x.titulo === e.titulo && x.hora_inicio === e.hora_inicio && x.hora_fin === e.hora_fin) === i
       );
       const horaInicio = parseInt(citaForm.hora_inicio.split(':')[0]) * 60 + parseInt(citaForm.hora_inicio.split(':')[1]);
       const horaFin = parseInt(citaForm.hora_fin.split(':')[0]) * 60 + parseInt(citaForm.hora_fin.split(':')[1]);
