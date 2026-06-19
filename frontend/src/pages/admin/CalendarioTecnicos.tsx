@@ -121,6 +121,10 @@ export const CalendarioTecnicos = () => {
   const [cancelando, setCancelando] = useState(false);
   const [editingEvento, setEditingEvento] = useState<EventoCalendario | null>(null);
 
+  // Drag-and-drop state
+  const [dragInfo, setDragInfo] = useState<{ servicio: Servicio; offsetX: number } | null>(null);
+  const [dropPreview, setDropPreview] = useState<{ tecnicoId: string; horaInicio: string; horaFin: string; hasConflict: boolean } | null>(null);
+
   // Trasladar servicio state
   const [trasladando, setTrasladando] = useState(false);
   const [trasladandoTecnico, setTrasladandoTecnico] = useState<{ id: string; nombre: string } | null>(null);
@@ -313,6 +317,110 @@ export const CalendarioTecnicos = () => {
     setTrasladando(false);
     setTrasladandoTecnico(null);
     setTrasladandoSlot(null);
+  };
+
+  // ─── Drag-and-drop handlers ───────────────────────────────────────────────
+  const snapTo30Min = (horaDecimal: number) => Math.round(horaDecimal * 2) / 2;
+  const HORA_FIN_LABORAL = 19;
+
+  const handleDragStart = (e: React.DragEvent, s: Servicio) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragInfo({ servicio: s, offsetX: e.clientX - rect.left });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const calcDropSlot = (e: React.DragEvent, offsetX: number, durMin: number) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const rawX = e.clientX - rect.left - offsetX;
+    const horaDecimal = HORA_INICIO + rawX / PX_POR_HORA;
+    const snapped = snapTo30Min(horaDecimal);
+    const startMin = Math.round(snapped * 60);
+    const endMin = startMin + durMin;
+    return { startMin, endMin, valid: startMin >= HORA_INICIO * 60 && endMin <= HORA_FIN_LABORAL * 60 };
+  };
+
+  const handleTimelineDragOver = (e: React.DragEvent, tecnicoId: string) => {
+    if (!dragInfo) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const durMin = dragInfo.servicio.hora_inicio && dragInfo.servicio.hora_fin
+      ? toMin(dragInfo.servicio.hora_fin) - toMin(dragInfo.servicio.hora_inicio)
+      : 90;
+    const { startMin, endMin, valid } = calcDropSlot(e, dragInfo.offsetX, durMin);
+    if (!valid) { setDropPreview(null); return; }
+
+    const diaStr = format(fecha, 'yyyy-MM-dd');
+    const hasConflict = [...servicios, ...eventos].some(item => {
+      const id = (item as Servicio).id;
+      if (id === dragInfo.servicio.id) return false;
+      const tid = (item as Servicio).tecnicoId ?? (item as EventoCalendario).tecnicoId;
+      if (tid !== tecnicoId) return false;
+      const fstr = String((item as Servicio).fecha_programada ?? (item as EventoCalendario).fecha).substring(0, 10);
+      if (fstr !== diaStr) return false;
+      const hi = (item as any).hora_inicio;
+      const hf = (item as any).hora_fin;
+      if (!hi || !hf) return false;
+      return startMin < toMin(hf) && endMin > toMin(hi);
+    });
+
+    setDropPreview({ tecnicoId, horaInicio: toHora(startMin), horaFin: toHora(endMin), hasConflict });
+  };
+
+  const handleTimelineDrop = async (e: React.DragEvent, tecnicoId: string) => {
+    e.preventDefault();
+    if (!dragInfo || !dropPreview || dropPreview.tecnicoId !== tecnicoId) return;
+    const { horaInicio: newHI, horaFin: newHF } = dropPreview;
+    setDropPreview(null);
+    setDragInfo(null);
+
+    const diaStr = format(fecha, 'yyyy-MM-dd');
+    const ini = toMin(newHI);
+    const fin = toMin(newHF);
+    const WORK_END_MIN = HORA_FIN_LABORAL * 60;
+
+    const overlappingServs = servicios.filter(s =>
+      s.id !== dragInfo.servicio.id &&
+      s.tecnicoId === tecnicoId &&
+      String(s.fecha_programada).substring(0, 10) === diaStr &&
+      s.hora_inicio && s.hora_fin &&
+      ini < toMin(s.hora_fin) && fin > toMin(s.hora_inicio),
+    );
+    const overlappingEvts = eventos.filter(ev =>
+      ev.tecnicoId === tecnicoId &&
+      String(ev.fecha).substring(0, 10) === diaStr &&
+      ev.hora_inicio && ev.hora_fin &&
+      ini < toMin(ev.hora_fin) && fin > toMin(ev.hora_inicio),
+    );
+
+    for (const s of overlappingServs) {
+      const dur = toMin(s.hora_fin!) - toMin(s.hora_inicio!);
+      if (fin + dur > WORK_END_MIN) { toast.error(`Mover "${s.cliente?.nombre}" quedaría fuera del horario laboral`); return; }
+    }
+    for (const ev of overlappingEvts) {
+      const dur = toMin(ev.hora_fin) - toMin(ev.hora_inicio);
+      if (fin + dur > WORK_END_MIN) { toast.error(`Mover "${ev.titulo}" quedaría fuera del horario laboral`); return; }
+    }
+
+    try {
+      const ops: Promise<any>[] = [actualizarServicio(dragInfo.servicio.id, { hora_inicio: newHI, hora_fin: newHF })];
+      if (tecnicoId !== dragInfo.servicio.tecnicoId) {
+        ops.push(asignarTecnico(dragInfo.servicio.id, tecnicoId));
+      }
+      for (const s of overlappingServs) {
+        const dur = toMin(s.hora_fin!) - toMin(s.hora_inicio!);
+        ops.push(actualizarServicio(s.id, { hora_inicio: toHora(fin), hora_fin: toHora(fin + dur) }));
+      }
+      for (const ev of overlappingEvts) {
+        const dur = toMin(ev.hora_fin) - toMin(ev.hora_inicio);
+        ops.push(actualizarEventoCalendario(ev.id, { hora_inicio: toHora(fin), hora_fin: toHora(fin + dur) }));
+      }
+      await Promise.all(ops);
+      const moved = overlappingServs.length + overlappingEvts.length;
+      toast.success(`Servicio movido${moved > 0 ? ` — ${moved} bloque${moved !== 1 ? 's' : ''} ajustado${moved !== 1 ? 's' : ''}` : ''}`);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Error moviendo servicio');
+    }
   };
 
   const handleConfirmarTraslado = async () => {
@@ -807,7 +915,13 @@ export const CalendarioTecnicos = () => {
                       </div>
 
                       {/* Timeline */}
-                      <div className="relative" style={{ width: totalWidth, height: 80 }}>
+                      <div
+                        className="relative"
+                        style={{ width: totalWidth, height: 80 }}
+                        onDragOver={e => handleTimelineDragOver(e, tec.id)}
+                        onDrop={e => handleTimelineDrop(e, tec.id)}
+                        onDragLeave={() => setDropPreview(null)}
+                      >
                         {/* Líneas de hora */}
                         {HORAS.map(h => (
                           <div key={h} style={{ left: (h - HORA_INICIO) * PX_POR_HORA }} className="absolute top-0 bottom-0 w-px bg-slate-100" />
@@ -895,6 +1009,31 @@ export const CalendarioTecnicos = () => {
                           );
                         })}
 
+                        {/* Drop preview ghost */}
+                        {dropPreview && dropPreview.tecnicoId === tec.id && (() => {
+                          const previewStart = parseHora(dropPreview.horaInicio);
+                          const previewEnd = parseHora(dropPreview.horaFin);
+                          return (
+                            <div
+                              style={{
+                                left: Math.max(0, (previewStart - HORA_INICIO) * PX_POR_HORA),
+                                width: (previewEnd - previewStart) * PX_POR_HORA,
+                                top: 4, bottom: 4, position: 'absolute',
+                              }}
+                              className={`rounded-lg border-2 border-dashed z-40 pointer-events-none flex items-center justify-center ${
+                                dropPreview.hasConflict
+                                  ? 'bg-amber-100/80 border-amber-400'
+                                  : 'bg-blue-100/80 border-blue-400'
+                              }`}
+                            >
+                              <span className={`text-[9px] font-bold ${dropPreview.hasConflict ? 'text-amber-600' : 'text-blue-600'}`}>
+                                {dropPreview.horaInicio}
+                                {dropPreview.hasConflict ? ' · ajusta' : ''}
+                              </span>
+                            </div>
+                          );
+                        })()}
+
                         {/* Servicios */}
                         {servsDia.map(s => {
                           const startH = parseHora(s.hora_inicio, 8);
@@ -903,12 +1042,17 @@ export const CalendarioTecnicos = () => {
                           const width = Math.max(60, (endH - startH) * PX_POR_HORA);
                           const enEjecucion = s.estado === 'en_servicio';
                           const enCamino = s.estado === 'en_camino';
+                          const isDraggable = ['pendiente', 'asignado'].includes(s.estado);
+                          const isDragging = dragInfo?.servicio.id === s.id;
                           return (
                             <button
                               key={s.id}
+                              draggable={isDraggable}
+                              onDragStart={isDraggable ? e => handleDragStart(e, s) : undefined}
+                              onDragEnd={() => { setDragInfo(null); setDropPreview(null); }}
                               style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
-                              onClick={() => setSelectedServicio(s)}
-                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${estadoColor[s.estado]} ${enEjecucion ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}
+                              onClick={() => !dragInfo && setSelectedServicio(s)}
+                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${estadoColor[s.estado]} ${enEjecucion ? 'ring-2 ring-orange-400 ring-offset-1' : ''} ${isDraggable ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''}`}
                             >
                               <div className="flex items-center justify-between gap-0.5">
                                 <p className="text-[10px] font-bold truncate">{s.hora_inicio}–{s.hora_fin}</p>
