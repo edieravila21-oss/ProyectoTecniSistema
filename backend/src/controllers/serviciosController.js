@@ -865,6 +865,41 @@ const eliminar = async (req, res, next) => {
   }
 };
 
+const registrarEquipo = async (req, res, next) => {
+  try {
+    const servicio = await prisma.servicio.findUnique({ where: { id: req.params.id } });
+    if (!servicio) return res.status(404).json({ success: false, error: 'Servicio no encontrado' });
+    if (servicio.equipoId) return res.status(400).json({ success: false, error: 'El servicio ya tiene equipo asociado' });
+
+    const esTecnicoAsignado = servicio.tecnicoId === req.usuario.id;
+    const esAdmin = req.usuario.rol === 'admin';
+    if (!esAdmin && !esTecnicoAsignado) return res.status(403).json({ success: false, error: 'No tienes permiso' });
+
+    const { tipo, marca, modelo, serial, capacidad } = req.body;
+    if (!tipo) return res.status(400).json({ success: false, error: 'El tipo de equipo es requerido' });
+    if (!marca) return res.status(400).json({ success: false, error: 'La marca es requerida' });
+
+    const equipo = await prisma.equipo.create({
+      data: {
+        clienteId: servicio.clienteId,
+        tipo,
+        marca,
+        modelo: modelo || undefined,
+        serial: serial || undefined,
+        notas: capacidad || undefined,
+      },
+    });
+
+    await prisma.servicio.update({ where: { id: req.params.id }, data: { equipoId: equipo.id } });
+
+    try { getIO().to('admin').emit('equipo_registrado', { servicioId: servicio.id, equipo }); } catch (_) {}
+
+    res.status(201).json({ success: true, data: equipo });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const corregirEquipo = async (req, res, next) => {
   try {
     const servicio = await prisma.servicio.findUnique({
@@ -903,5 +938,5 @@ const corregirEquipo = async (req, res, next) => {
 module.exports = {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
   obtenerChecklist, marcarChecklist, subirFoto, guardarFirma,
-  guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo,
+  guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo, registrarEquipo,
 };

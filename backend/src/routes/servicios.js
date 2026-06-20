@@ -4,7 +4,7 @@ const { verifyToken, requireAdmin } = require('../middlewares/auth');
 const {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
   obtenerChecklist, marcarChecklist, subirFoto, guardarFirma,
-  guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo,
+  guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo, registrarEquipo,
 } = require('../controllers/serviciosController');
 
 router.use(verifyToken);
@@ -23,6 +23,7 @@ router.post('/:id/firma', guardarFirma);
 router.patch('/:id/calificacion', guardarCalificacion);
 router.post('/:id/notas', agregarNota);
 router.delete('/:id', eliminar);
+router.post('/:id/equipo', registrarEquipo);
 router.patch('/:id/equipo', corregirEquipo);
 
 module.exports = router;

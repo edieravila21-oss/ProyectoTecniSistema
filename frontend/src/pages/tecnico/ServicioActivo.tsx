@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   getServicio, cambiarEstadoServicio, marcarChecklistItem,
   subirFoto, guardarFirma, agregarNota, actualizarServicio,
-  getHistorialEquipo, eliminarServicio, corregirEquipo,
+  getHistorialEquipo, eliminarServicio, corregirEquipo, registrarEquipo,
 } from '@/api/servicios';
 import { getHistorialCliente } from '@/api/clientes';
 import { Button } from '@/components/ui/button';
@@ -86,7 +86,7 @@ export const ServicioActivo = () => {
   const [activeDiagItem, setActiveDiagItem] = useState<string | null>(null);
   const [diagEstado, setDiagEstado] = useState<'observacion' | 'falla' | null>(null);
   const [diagValue, setDiagValue] = useState('');
-  const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', capacidad: '', tecnologia: '' });
+  const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', capacidad: '', tecnologia: '', tipo: '' });
   const [fallaConfirmada, setFallaConfirmada] = useState<boolean | null>(null);
   const [diagnosticoFinal, setDiagnosticoFinal] = useState('');
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
@@ -569,9 +569,7 @@ export const ServicioActivo = () => {
 
                   // Items 2 y 3 bloqueados hasta que exista foto 'antes'
                   const bloqueadoSinFoto = !isFotoItem && !tieneFotoAntes && !item.completado;
-                  // Equipo item solo se deshabilita como div (usa botón interno) cuando hay equipo vinculado;
-                  // si no hay equipo, el item se puede tocar directamente para marcarlo como hecho.
-                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado && !!servicio.equipo);
+                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado);
 
                   return (
                     <div
@@ -594,9 +592,123 @@ export const ServicioActivo = () => {
                         {bloqueadoSinFoto && (
                           <p className="text-[11px] text-slate-400 mt-0.5">🔒 Primero toma la foto del equipo</p>
                         )}
-                        {/* Sin equipo vinculado: indicar que se puede confirmar directamente */}
+                        {/* Sin equipo vinculado: formulario para registrar el equipo */}
                         {isEquipoItem && tieneFotoAntes && !servicio.equipo && !item.completado && (
-                          <p className="text-[11px] text-slate-400 mt-0.5">Toca para confirmar (sin equipo registrado)</p>
+                          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <p className="text-xs font-semibold text-blue-700">Registra los datos del equipo:</p>
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] font-medium text-slate-500">Tipo de equipo</label>
+                              <select
+                                value={correccionData.tipo}
+                                onChange={(e) => setCorreccionData(d => ({ ...d, tipo: e.target.value, marca: '', marcaOtra: '', capacidad: '', tecnologia: '' }))}
+                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">Seleccionar tipo</option>
+                                <option value="aire_acondicionado">Aire Acondicionado</option>
+                                <option value="nevera">Nevera</option>
+                                <option value="otro">Otro</option>
+                              </select>
+                              <label className="text-[11px] font-medium text-slate-500">Marca</label>
+                              <select
+                                value={correccionData.marca}
+                                onChange={(e) => setCorreccionData(d => ({ ...d, marca: e.target.value, marcaOtra: '' }))}
+                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">Seleccionar marca</option>
+                                {correccionData.tipo === 'aire_acondicionado' ? (
+                                  <>
+                                    <option value="Samsung">Samsung</option>
+                                    <option value="LG">LG</option>
+                                    <option value="Carrier">Carrier</option>
+                                    <option value="Daikin">Daikin</option>
+                                    <option value="Midea">Midea</option>
+                                    <option value="York">York</option>
+                                    <option value="Trane">Trane</option>
+                                    <option value="Lennox">Lennox</option>
+                                    <option value="Panasonic">Panasonic</option>
+                                    <option value="Gree">Gree</option>
+                                    <option value="Hisense">Hisense</option>
+                                    <option value="TCL">TCL</option>
+                                    <option value="Aux">Aux</option>
+                                    <option value="Whirlpool">Whirlpool</option>
+                                    <option value="Electrolux">Electrolux</option>
+                                  </>
+                                ) : correccionData.tipo === 'nevera' ? (
+                                  <>
+                                    <option value="Samsung">Samsung</option>
+                                    <option value="LG">LG</option>
+                                    <option value="Whirlpool">Whirlpool</option>
+                                    <option value="Mabe">Mabe</option>
+                                    <option value="Haceb">Haceb</option>
+                                    <option value="Electrolux">Electrolux</option>
+                                    <option value="Challenger">Challenger</option>
+                                    <option value="Indurama">Indurama</option>
+                                    <option value="Bosch">Bosch</option>
+                                    <option value="Frigidaire">Frigidaire</option>
+                                    <option value="Panasonic">Panasonic</option>
+                                    <option value="Daewoo">Daewoo</option>
+                                  </>
+                                ) : null}
+                                <option value="Otra">Otra</option>
+                              </select>
+                              {correccionData.marca === 'Otra' && (
+                                <Input
+                                  placeholder="Escribir marca"
+                                  value={correccionData.marcaOtra}
+                                  onChange={(e) => setCorreccionData(d => ({ ...d, marcaOtra: e.target.value }))}
+                                  className="h-8 text-xs bg-white"
+                                />
+                              )}
+                              {(correccionData.tipo === 'aire_acondicionado') && (
+                                <>
+                                  <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
+                                  <select
+                                    value={correccionData.tecnologia}
+                                    onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
+                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">Seleccionar</option>
+                                    <option value="Inverter">Inverter</option>
+                                    <option value="Convencional">Convencional</option>
+                                  </select>
+                                  <label className="text-[11px] font-medium text-slate-500">Capacidad</label>
+                                  <select
+                                    value={correccionData.capacidad}
+                                    onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
+                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">Capacidad (BTU)</option>
+                                    <option value="9,000 BTU">9,000 BTU</option>
+                                    <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
+                                    <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
+                                    <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
+                                    <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
+                                    <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
+                                    <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
+                                  </select>
+                                </>
+                              )}
+                            </div>
+                            <Button
+                              className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
+                              onClick={async () => {
+                                if (!id) return;
+                                const tipo = correccionData.tipo;
+                                const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra.trim() : correccionData.marca;
+                                if (!tipo) { toast.error('Selecciona el tipo de equipo'); return; }
+                                if (!marca) { toast.error('Selecciona la marca del equipo'); return; }
+                                const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
+                                try {
+                                  await registrarEquipo(id, { tipo, marca, capacidad: capacidad || undefined });
+                                  toast.success('Equipo registrado correctamente');
+                                  await handleChecklistItem(item.id);
+                                  fetchServicio();
+                                } catch { toast.error('Error registrando el equipo'); }
+                              }}
+                            >
+                              <Check className="h-3.5 w-3.5 mr-1" /> Registrar equipo
+                            </Button>
+                          </div>
                         )}
                         {/* Equipo item: formulario de verificación/complemento */}
                         {isEquipoItem && tieneFotoAntes && servicio.equipo && !item.completado && (

@@ -49,3 +49,6 @@ export const eliminarServicio = (id: string) =>
 
 export const corregirEquipo = (servicioId: string, data: { marca?: string; modelo?: string; serial?: string; capacidad?: string }) =>
   api.patch<ApiResponse<unknown>>(`/servicios/${servicioId}/equipo`, data);
+
+export const registrarEquipo = (servicioId: string, data: { tipo: string; marca: string; modelo?: string; serial?: string; capacidad?: string }) =>
+  api.post<ApiResponse<unknown>>(`/servicios/${servicioId}/equipo`, data);
