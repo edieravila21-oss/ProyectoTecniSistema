@@ -569,7 +569,9 @@ export const ServicioActivo = () => {
 
                   // Items 2 y 3 bloqueados hasta que exista foto 'antes'
                   const bloqueadoSinFoto = !isFotoItem && !tieneFotoAntes && !item.completado;
-                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado);
+                  // Equipo item solo se deshabilita como div (usa botón interno) cuando hay equipo vinculado;
+                  // si no hay equipo, el item se puede tocar directamente para marcarlo como hecho.
+                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado && !!servicio.equipo);
 
                   return (
                     <div
@@ -591,6 +593,10 @@ export const ServicioActivo = () => {
                         {/* Items bloqueados: mostrar por qué están bloqueados */}
                         {bloqueadoSinFoto && (
                           <p className="text-[11px] text-slate-400 mt-0.5">🔒 Primero toma la foto del equipo</p>
+                        )}
+                        {/* Sin equipo vinculado: indicar que se puede confirmar directamente */}
+                        {isEquipoItem && tieneFotoAntes && !servicio.equipo && !item.completado && (
+                          <p className="text-[11px] text-slate-400 mt-0.5">Toca para confirmar (sin equipo registrado)</p>
                         )}
                         {/* Equipo item: formulario de verificación/complemento */}
                         {isEquipoItem && tieneFotoAntes && servicio.equipo && !item.completado && (
