@@ -57,4 +57,14 @@ const uploadBase64ToCloudinary = async (base64String, folder = 'techserv/firmas'
   return { secure_url: relativePath };
 };
 
-module.exports = { cloudinary, uploadToCloudinary, uploadBase64ToCloudinary };
+const deleteFromCloudinary = async (url) => {
+  if (useCloudinary && cloudinary) {
+    const match = url.match(/\/upload\/(?:v\d+\/)?(.+)\.\w+$/);
+    if (match) await cloudinary.uploader.destroy(match[1]);
+  } else {
+    const filePath = path.join(UPLOADS_DIR, url.replace(/^\/uploads\//, '').replace(/\//g, path.sep));
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+};
+
+module.exports = { cloudinary, uploadToCloudinary, uploadBase64ToCloudinary, deleteFromCloudinary };

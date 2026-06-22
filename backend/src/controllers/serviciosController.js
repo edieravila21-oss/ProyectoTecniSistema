@@ -1,6 +1,6 @@
 const prisma = require('../config/db');
 const { getIO } = require('../config/socket');
-const { uploadToCloudinary, uploadBase64ToCloudinary } = require('../config/cloudinary');
+const { uploadToCloudinary, uploadBase64ToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 const { getChecklistPorTipo } = require('../services/checklistService');
 const { validarTransicion, paginar, respuestaPaginada } = require('../utils/helpers');
 
@@ -754,6 +754,20 @@ const subirFoto = async (req, res, next) => {
   }
 };
 
+const eliminarFoto = async (req, res, next) => {
+  try {
+    const foto = await prisma.fotoServicio.findUnique({ where: { id: req.params.fotoId } });
+    if (!foto || foto.servicioId !== req.params.id) {
+      return res.status(404).json({ success: false, error: 'Foto no encontrada', code: 'NOT_FOUND' });
+    }
+    await deleteFromCloudinary(foto.url);
+    await prisma.fotoServicio.delete({ where: { id: foto.id } });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const guardarFirma = async (req, res, next) => {
   try {
     const { firma_base64 } = req.body;
@@ -937,6 +951,6 @@ const corregirEquipo = async (req, res, next) => {
 
 module.exports = {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
-  obtenerChecklist, marcarChecklist, subirFoto, guardarFirma,
+  obtenerChecklist, marcarChecklist, subirFoto, eliminarFoto, guardarFirma,
   guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo, registrarEquipo,
 };

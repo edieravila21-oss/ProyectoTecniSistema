@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   getServicio, cambiarEstadoServicio, marcarChecklistItem,
-  subirFoto, guardarFirma, agregarNota, actualizarServicio,
+  subirFoto, eliminarFoto, guardarFirma, agregarNota, actualizarServicio,
   getHistorialEquipo, eliminarServicio, corregirEquipo, registrarEquipo,
 } from '@/api/servicios';
 import { getHistorialCliente } from '@/api/clientes';
@@ -17,7 +17,7 @@ import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
 import type { Servicio, MetodoPago } from '@/types';
 import {
   Phone, MapPin, Camera, Check, CheckCircle,
-  Trash2, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
+  Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
   User, Clock, DollarSign, Star, Plus, X,
 } from 'lucide-react';
 import SignatureCanvas from 'react-signature-canvas';
@@ -72,6 +72,7 @@ export const ServicioActivo = () => {
   const [pasoActual, setPasoActual] = useState(0);
   const initialLoadDone = useRef(false);
   const [uploadingTipos, setUploadingTipos] = useState<Set<string>>(new Set());
+  const [deletingFotos, setDeletingFotos] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [notasTecnico, setNotasTecnico] = useState('');
   const [valorFinal, setValorFinal] = useState('');
@@ -256,6 +257,26 @@ export const ServicioActivo = () => {
       finally { setUploadingTipos(prev => { const s = new Set(prev); s.delete(tipo); return s; }); }
     };
     input.click();
+  };
+
+  const handleEliminarFoto = async (fotoId: string) => {
+    if (!id) return;
+    setDeletingFotos(prev => new Set(prev).add(fotoId));
+    try {
+      await eliminarFoto(id, fotoId);
+      fetchServicio();
+      toast.success('Foto eliminada');
+    } catch { toast.error('Error al eliminar la foto'); }
+    finally { setDeletingFotos(prev => { const s = new Set(prev); s.delete(fotoId); return s; }); }
+  };
+
+  const handleDescargarFoto = (url: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = url.split('/').pop() || 'foto.jpg';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
   };
 
   const handleGuardarFirma = async () => {
@@ -540,8 +561,16 @@ export const ServicioActivo = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     {fotosAntes.map(f => (
-                      <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                        <img src={f.url} alt="Antes" className="w-full h-full object-cover" />
+                      <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
+                        <img src={f.url} alt="Antes" className="w-full h-full object-cover rounded-xl" />
+                        <div className="absolute bottom-1 right-1 flex gap-1">
+                          <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
+                            <Download className="h-3.5 w-3.5 text-white" />
+                          </button>
+                          <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
+                            <Trash2 className="h-3.5 w-3.5 text-white" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1223,8 +1252,16 @@ export const ServicioActivo = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     {fotosDurante.map(f => (
-                      <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                        <img src={f.url} alt="Durante" className="w-full h-full object-cover" />
+                      <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
+                        <img src={f.url} alt="Durante" className="w-full h-full object-cover rounded-xl" />
+                        <div className="absolute bottom-1 right-1 flex gap-1">
+                          <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
+                            <Download className="h-3.5 w-3.5 text-white" />
+                          </button>
+                          <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
+                            <Trash2 className="h-3.5 w-3.5 text-white" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1359,8 +1396,16 @@ export const ServicioActivo = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     {fotosDespues.map(f => (
-                      <div key={f.id} className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                        <img src={f.url} alt="Después" className="w-full h-full object-cover" />
+                      <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
+                        <img src={f.url} alt="Después" className="w-full h-full object-cover rounded-xl" />
+                        <div className="absolute bottom-1 right-1 flex gap-1">
+                          <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
+                            <Download className="h-3.5 w-3.5 text-white" />
+                          </button>
+                          <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
+                            <Trash2 className="h-3.5 w-3.5 text-white" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

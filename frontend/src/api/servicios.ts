@@ -47,6 +47,9 @@ export const getHistorialEquipo = (equipoId: string, excluirServicio?: string) =
 export const eliminarServicio = (id: string) =>
   api.delete<ApiResponse<{ message: string }>>(`/servicios/${id}`);
 
+export const eliminarFoto = (servicioId: string, fotoId: string) =>
+  api.delete<ApiResponse<unknown>>(`/servicios/${servicioId}/fotos/${fotoId}`);
+
 export const corregirEquipo = (servicioId: string, data: { marca?: string; modelo?: string; serial?: string; capacidad?: string }) =>
   api.patch<ApiResponse<unknown>>(`/servicios/${servicioId}/equipo`, data);
 
