@@ -48,6 +48,7 @@ export const Servicios = () => {
     valor_estimado: '', notas_admin: '',
   });
   const [saving, setSaving] = useState(false);
+  const [proximoServicio, setProximoServicio] = useState<Servicio | null>(null);
 
   const fetchServicios = useCallback(async () => {
     setLoading(true);
@@ -73,12 +74,28 @@ export const Servicios = () => {
     if (id) openDrawer(id);
   }, []);
 
+  const fetchProximoServicio = async (s: Servicio) => {
+    if (s.estado !== 'en_servicio' || !s.tecnicoId || !s.fecha_programada) {
+      setProximoServicio(null);
+      return;
+    }
+    try {
+      const fecha = String(s.fecha_programada).substring(0, 10);
+      const { data: res } = await getServicios({ tecnico_id: s.tecnicoId, fecha, limit: '10' });
+      const candidatos = (res.data as Servicio[])
+        .filter(sv => sv.id !== s.id && sv.hora_inicio && (!s.hora_fin || sv.hora_inicio >= s.hora_fin))
+        .sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || ''));
+      setProximoServicio(candidatos[0] || null);
+    } catch { setProximoServicio(null); }
+  };
+
   const openDrawer = async (id: string) => {
     try {
       const { data: res } = await getServicio(id);
       setSelected(res.data);
       setDrawerOpen(true);
       setEditando(false);
+      fetchProximoServicio(res.data);
     } catch { toast.error('Error cargando servicio'); }
   };
 
@@ -147,6 +164,7 @@ export const Servicios = () => {
       toast.success('Servicio eliminado');
       setDrawerOpen(false);
       setSelected(null);
+      setProximoServicio(null);
       fetchServicios();
     } catch (e: any) { toast.error(e.response?.data?.error || 'Error eliminando servicio'); }
   };
@@ -259,11 +277,11 @@ export const Servicios = () => {
       {/* Drawer */}
       {drawerOpen && selected && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => { setDrawerOpen(false); setEditando(false); }} />
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => { setDrawerOpen(false); setEditando(false); setProximoServicio(null); }} />
           <div className="relative w-full max-w-lg bg-white h-full overflow-y-auto shadow-2xl">
             <div className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-slate-100 p-5 flex items-center justify-between z-10">
               <h2 className="font-bold text-slate-800">Detalle del servicio</h2>
-              <button onClick={() => { setDrawerOpen(false); setEditando(false); }} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100">
+              <button onClick={() => { setDrawerOpen(false); setEditando(false); setProximoServicio(null); }} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-slate-100">
                 <X className="h-4 w-4 text-slate-400" />
               </button>
             </div>
@@ -337,6 +355,12 @@ export const Servicios = () => {
                               <Input type="time" value={editForm.hora_fin} onChange={e => setEditForm(f => ({ ...f, hora_fin: e.target.value }))} className="rounded-lg h-9 text-sm" />
                             </div>
                           </div>
+                          {proximoServicio && (
+                            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                              <span>Próximo servicio del técnico: <strong>{proximoServicio.cliente?.nombre}</strong> a las <strong>{proximoServicio.hora_inicio}</strong></span>
+                            </div>
+                          )}
                           <div>
                             <label className="text-[11px] font-semibold text-slate-500 block mb-1">Dirección</label>
                             <Input value={editForm.direccion_servicio} onChange={e => setEditForm(f => ({ ...f, direccion_servicio: e.target.value }))} placeholder="Dirección del servicio" className="rounded-lg h-9 text-sm" />

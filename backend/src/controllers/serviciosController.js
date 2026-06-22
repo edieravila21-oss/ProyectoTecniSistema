@@ -57,7 +57,7 @@ async function verificarDisponibilidadTecnico(tecnicoId, fecha, horaInicio, hora
         estado: { notIn: ['cancelado', 'completado'] },
         ...(excludeServicioId ? { id: { not: excludeServicioId } } : {}),
       },
-      select: { id: true, hora_inicio: true, hora_fin: true, descripcion_falla: true },
+      select: { id: true, hora_inicio: true, hora_fin: true, cliente: { select: { nombre: true } } },
     }),
   ]);
 
@@ -74,9 +74,9 @@ async function verificarDisponibilidadTecnico(tecnicoId, fecha, horaInicio, hora
     if (svc.hora_inicio && svc.hora_fin && horasSuperpuestas(horaInicio, horaFin, svc.hora_inicio, svc.hora_fin)) {
       return {
         disponible: false,
-        motivo: `Conflicto con servicio existente (${svc.hora_inicio} - ${svc.hora_fin})`,
+        motivo: `Choca con el servicio de ${svc.cliente?.nombre || 'otro cliente'} (${svc.hora_inicio} – ${svc.hora_fin})`,
         code: 'CONFLICTO_SERVICIO',
-        conflicto: { id: svc.id, hora_inicio: svc.hora_inicio, hora_fin: svc.hora_fin },
+        conflicto: { id: svc.id, hora_inicio: svc.hora_inicio, hora_fin: svc.hora_fin, cliente: svc.cliente?.nombre },
       };
     }
   }
@@ -340,6 +340,20 @@ const actualizar = async (req, res, next) => {
       direccion_servicio, valor_estimado, valor_final, metodo_pago,
       notas_admin, notas_tecnico,
     } = req.body;
+
+    // If admin is changing hora_fin, ensure it doesn't overlap the technician's next service
+    if (esAdmin && hora_fin !== undefined && hora_fin !== servicioActual.hora_fin && servicioActual.tecnicoId) {
+      const horaInicioEfectiva = hora_inicio || servicioActual.hora_inicio;
+      const fechaEfectiva = fecha_programada ? new Date(fecha_programada) : servicioActual.fecha_programada;
+      if (horaInicioEfectiva && fechaEfectiva) {
+        const check = await verificarDisponibilidadTecnico(
+          servicioActual.tecnicoId, fechaEfectiva, horaInicioEfectiva, hora_fin, req.params.id
+        );
+        if (!check.disponible) {
+          return res.status(409).json({ success: false, error: check.motivo, code: check.code, data: check.conflicto });
+        }
+      }
+    }
 
     const data = {};
     if (esAdmin) {
