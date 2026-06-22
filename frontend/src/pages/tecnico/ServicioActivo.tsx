@@ -5,6 +5,9 @@ import {
   subirFoto, eliminarFoto, guardarFirma, agregarNota, actualizarServicio,
   getHistorialEquipo, eliminarServicio, corregirEquipo, registrarEquipo,
 } from '@/api/servicios';
+import { cacheServicio, getCachedServicio, enqueueChecklist, enqueueFoto } from '@/lib/offlineDb';
+import { processSyncQueue } from '@/lib/syncManager';
+import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { getHistorialCliente } from '@/api/clientes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +19,7 @@ import { toast } from '@/components/shared/Toast';
 import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
 import type { Servicio, MetodoPago } from '@/types';
 import {
-  Phone, MapPin, Camera, Check, CheckCircle,
+  Phone, MapPin, Camera, Check, CheckCircle, WifiOff,
   Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
   User, Clock, DollarSign, Star, Plus, X,
 } from 'lucide-react';
@@ -71,6 +74,7 @@ export const ServicioActivo = () => {
   const [loading, setLoading] = useState(true);
   const [pasoActual, setPasoActual] = useState(0);
   const initialLoadDone = useRef(false);
+  const isOffline = useOfflineStatus();
   const [uploadingTipos, setUploadingTipos] = useState<Set<string>>(new Set());
   const [deletingFotos, setDeletingFotos] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -96,36 +100,66 @@ export const ServicioActivo = () => {
 
   const fetchServicio = async () => {
     if (!id) return;
-    try {
-      const { data: res } = await getServicio(id);
-      setServicio(res.data);
+    let data: Servicio | undefined;
 
-      // Solo calcula el paso en la carga inicial — no en refreshes posteriores
-      if (!initialLoadDone.current) {
-        initialLoadDone.current = true;
-        if (res.data.estado === 'asignado' || res.data.estado === 'en_camino') setPasoActual(0);
-        else if (res.data.estado === 'en_servicio') {
-          const cl = res.data.checklist || [];
-          const llegada = cl.filter(c => c.categoria === 'llegada');
-          const diag = cl.filter(c => c.categoria === 'diagnostico');
-          const rep = cl.filter(c => c.categoria === 'reparacion');
-          if (rep.every(c => c.completado)) setPasoActual(4);
-          else if (diag.every(c => c.completado)) setPasoActual(3);
-          else if (llegada.every(c => c.completado)) setPasoActual(2);
-          else setPasoActual(1);
-        }
+    if (!navigator.onLine) {
+      data = await getCachedServicio(id).catch(() => undefined);
+      if (!data) {
+        toast.error('Sin conexión y sin datos en caché para este servicio');
+        setLoading(false);
+        return;
       }
-      if (res.data.valor_final) setValorFinal(String(res.data.valor_final));
-      if (res.data.notas_tecnico) setDescripcionTrabajo(res.data.notas_tecnico);
-      if (res.data.falla_confirmada !== undefined && res.data.falla_confirmada !== null) setFallaConfirmada(res.data.falla_confirmada);
-      if (res.data.diagnostico_final) setDiagnosticoFinal(res.data.diagnostico_final);
-      if (res.data.repuestos) setRepuestos(res.data.repuestos);
-    } catch { toast.error('Error cargando servicio'); }
-    finally { setLoading(false); }
+    } else {
+      try {
+        const { data: res } = await getServicio(id);
+        data = res.data;
+        cacheServicio(data).catch(() => {});
+      } catch {
+        toast.error('Error cargando servicio');
+        setLoading(false);
+        return;
+      }
+    }
+
+    setServicio(data);
+
+    // Solo calcula el paso en la carga inicial — no en refreshes posteriores
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true;
+      if (data.estado === 'asignado' || data.estado === 'en_camino') setPasoActual(0);
+      else if (data.estado === 'en_servicio') {
+        const cl = data.checklist || [];
+        const llegada = cl.filter(c => c.categoria === 'llegada');
+        const diag = cl.filter(c => c.categoria === 'diagnostico');
+        const rep = cl.filter(c => c.categoria === 'reparacion');
+        if (rep.every(c => c.completado)) setPasoActual(4);
+        else if (diag.every(c => c.completado)) setPasoActual(3);
+        else if (llegada.every(c => c.completado)) setPasoActual(2);
+        else setPasoActual(1);
+      }
+    }
+    if (data.valor_final) setValorFinal(String(data.valor_final));
+    if (data.notas_tecnico) setDescripcionTrabajo(data.notas_tecnico);
+    if (data.falla_confirmada !== undefined && data.falla_confirmada !== null) setFallaConfirmada(data.falla_confirmada);
+    if (data.diagnostico_final) setDiagnosticoFinal(data.diagnostico_final);
+    if (data.repuestos) setRepuestos(data.repuestos);
+    setLoading(false);
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(() => { fetchServicio(); }, [id]);
+
+  // When internet comes back: sync queued actions then refresh
+  useEffect(() => {
+    const handleOnline = async () => {
+      toast.success('Conexión restaurada — sincronizando...');
+      const synced = await processSyncQueue();
+      if (synced > 0 || id) fetchServicio();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   useEffect(() => {
     if (servicio?.equipo) {
@@ -189,6 +223,17 @@ export const ServicioActivo = () => {
 
   const handleChecklistItem = async (itemId: string) => {
     if (!id) return;
+
+    if (!navigator.onLine) {
+      // Optimistic update + enqueue for later sync
+      setServicio(prev => prev ? {
+        ...prev,
+        checklist: (prev.checklist || []).map(c => c.id === itemId ? { ...c, completado: true } : c),
+      } : prev);
+      await enqueueChecklist(id, itemId).catch(() => {});
+      return;
+    }
+
     try {
       await marcarChecklistItem(id, itemId);
       fetchServicio();
@@ -241,7 +286,20 @@ export const ServicioActivo = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file || !id) return;
 
-      // Sube en segundo plano — el técnico puede continuar de inmediato
+      if (!navigator.onLine) {
+        // Store locally — show immediately, upload when back online
+        const localUrl = URL.createObjectURL(file);
+        const fakeId = `local-${Date.now()}`;
+        setServicio(prev => prev ? {
+          ...prev,
+          fotos: [...(prev.fotos || []), { id: fakeId, servicioId: id, url: localUrl, tipo, subida_at: new Date().toISOString() }],
+        } : prev);
+        await enqueueFoto(id, tipo, file, localUrl).catch(() => {});
+        toast.success('📷 Foto guardada localmente — se subirá al recuperar internet');
+        return;
+      }
+
+      // Online: upload in background as before
       setUploadingTipos(prev => new Set(prev).add(tipo));
       toast.success('📷 Foto tomada, subiendo en segundo plano...');
 
@@ -261,6 +319,19 @@ export const ServicioActivo = () => {
 
   const handleEliminarFoto = async (fotoId: string) => {
     if (!id) return;
+
+    // Local-only photos (taken offline) — just remove from state
+    if (fotoId.startsWith('local-')) {
+      setServicio(prev => prev ? { ...prev, fotos: (prev.fotos || []).filter(f => f.id !== fotoId) } : prev);
+      toast.success('Foto local eliminada');
+      return;
+    }
+
+    if (!navigator.onLine) {
+      toast.error('Necesitas conexión para eliminar fotos ya subidas');
+      return;
+    }
+
     setDeletingFotos(prev => new Set(prev).add(fotoId));
     try {
       await eliminarFoto(id, fotoId);
@@ -361,6 +432,13 @@ export const ServicioActivo = () => {
 
   return (
     <div className="space-y-4 max-w-lg mx-auto pb-8">
+      {/* Offline banner */}
+      {isOffline && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-sm text-amber-800">
+          <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
+          <span>Sin conexión — los cambios se guardan y sincronizan al volver la señal</span>
+        </div>
+      )}
       {/* Progress bar */}
       <div className="flex items-center gap-1">
         {pasos.map((p, i) => (
