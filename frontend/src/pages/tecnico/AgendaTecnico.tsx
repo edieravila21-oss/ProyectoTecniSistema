@@ -123,8 +123,9 @@ export const AgendaTecnico = () => {
       await cambiarEstadoServicio(servicio.id, 'en_camino');
       toast.success('Notificación enviada al cliente');
       cargarServicios();
-    } catch {
-      toast.error('Error');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg || 'Error al cambiar estado');
     }
     finally { setAccionandoId(null); }
   };

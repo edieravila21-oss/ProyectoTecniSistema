@@ -403,6 +403,25 @@ const cambiarEstado = async (req, res, next) => {
       });
     }
 
+    // Block technician from starting travel to a new service while another is still active
+    if (estado === 'en_camino' && req.usuario.rol !== 'admin' && servicio.tecnicoId) {
+      const activo = await prisma.servicio.findFirst({
+        where: {
+          tecnicoId: servicio.tecnicoId,
+          estado: { in: ['en_camino', 'en_servicio'] },
+          id: { not: req.params.id },
+        },
+        select: { id: true, cliente: { select: { nombre: true } } },
+      });
+      if (activo) {
+        return res.status(400).json({
+          success: false,
+          error: `Tienes un servicio activo con ${activo.cliente?.nombre || 'otro cliente'}. Ciérralo antes de iniciar uno nuevo.`,
+          code: 'SERVICIO_ACTIVO',
+        });
+      }
+    }
+
     if (estado === 'completado') {
       const pendientes = servicio.checklist.filter(c => !c.completado);
       if (pendientes.length > 0) {

@@ -229,6 +229,14 @@ export const Servicios = () => {
                               <AlertTriangle className="h-3 w-3" />
                             </span>
                           )}
+                          {s.estado === 'en_servicio' && s.fecha_inicio_real && (() => {
+                            const horas = Math.round((Date.now() - new Date(s.fecha_inicio_real).getTime()) / 3600000);
+                            return horas >= 8 ? (
+                              <span title={`Lleva ${horas} h en ejecución sin cerrarse`} className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-orange-100 text-orange-500 shrink-0">
+                                <Clock className="h-3 w-3" />
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-right font-medium text-slate-700 hidden lg:table-cell">{s.valor_final ? formatCurrency(s.valor_final) : s.valor_estimado ? formatCurrency(s.valor_estimado) : '--'}</td>
