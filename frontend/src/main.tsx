@@ -7,12 +7,18 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
 }
 
-// Process any queued offline actions when the app opens with internet
-if (navigator.onLine) {
-  import('./lib/syncManager').then(({ processSyncQueue }) => {
-    processSyncQueue().catch(() => {});
+// On startup: sync any queued offline actions, then clean stale cache.
+// Delayed 3 s so it doesn't compete with the initial render.
+setTimeout(() => {
+  if (navigator.onLine) {
+    import('./lib/syncManager').then(({ processSyncQueue }) => {
+      processSyncQueue().catch(() => {});
+    });
+  }
+  import('./lib/cacheCleanup').then(({ runCacheCleanup }) => {
+    runCacheCleanup().catch(() => {});
   });
-}
+}, 3000);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

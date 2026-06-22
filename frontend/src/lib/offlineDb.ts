@@ -22,14 +22,43 @@ function db() {
 
 // ─── Servicio cache ────────────────────────────────────────────────────────
 
+type CacheEntry = { data: Servicio; cachedAt: number };
+
 export async function cacheServicio(servicio: Servicio) {
   const idb = await db();
-  await idb.put('servicio-cache', servicio, servicio.id);
+  const entry: CacheEntry = { data: servicio, cachedAt: Date.now() };
+  await idb.put('servicio-cache', entry, servicio.id);
 }
 
 export async function getCachedServicio(servicioId: string): Promise<Servicio | undefined> {
   const idb = await db();
-  return idb.get('servicio-cache', servicioId);
+  const raw = await idb.get('servicio-cache', servicioId);
+  if (!raw) return undefined;
+  // Handle both new format {data, cachedAt} and old format (raw Servicio object)
+  if ('cachedAt' in raw) return (raw as CacheEntry).data;
+  return raw as Servicio;
+}
+
+// Deletes completed/cancelled services older than 2 days, and any legacy entries without timestamp
+export async function cleanupServicioCache() {
+  const idb = await db();
+  const keys = await idb.getAllKeys('servicio-cache');
+  const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  for (const key of keys) {
+    const raw = await idb.get('servicio-cache', key);
+    if (!raw) continue;
+
+    const isNewFormat = raw && 'cachedAt' in raw;
+    if (!isNewFormat) { await idb.delete('servicio-cache', key); continue; } // legacy entry
+
+    const { data: servicio, cachedAt } = raw as CacheEntry;
+    const isOld = now - cachedAt > TWO_DAYS;
+    const isInactive = ['completado', 'cancelado'].includes(servicio?.estado ?? '');
+
+    if (isOld && isInactive) await idb.delete('servicio-cache', key);
+  }
 }
 
 // ─── Auth token (needed by service worker for Background Sync) ─────────────
