@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { getServicios, cambiarEstadoServicio, crearServicio, eliminarServicio } from '@/api/servicios';
+import { getServicios, cambiarEstadoServicio, crearServicio } from '@/api/servicios';
 import { getClientes } from '@/api/clientes';
 import { useAuthStore } from '@/store/authStore';
 import { useSocketStore } from '@/store/socketStore';
@@ -12,7 +12,7 @@ import {
   Phone, MapPin, Navigation, Wrench, Search, Star,
   CheckCircle2, ArrowRight, TrendingUp,
   Calendar, Snowflake, MessageSquare,
-  Plus, Trash2, ChevronRight, ClipboardList,
+  Plus, ChevronRight, ClipboardList,
 } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -36,7 +36,7 @@ export const AgendaTecnico = () => {
       });
       setServicios(res.data);
       const pending = (res.data as Servicio[]).filter(s =>
-        ['asignado', 'en_camino', 'en_servicio'].includes(s.estado)
+        ['asignado', 'en_camino', 'en_servicio', 'pausado'].includes(s.estado)
       ).length;
       actualizarBadge(pending);
     } catch {
@@ -142,21 +142,9 @@ export const AgendaTecnico = () => {
     finally { setAccionandoId(null); }
   };
 
-  const handleEliminarActivo = async (e: React.MouseEvent, servicio: Servicio) => {
-    e.stopPropagation();
-    const confirmar = window.confirm(`¿Eliminar el servicio de "${servicio.cliente?.nombre || 'este cliente'}"?`);
-    if (!confirmar) return;
-    try {
-      await eliminarServicio(servicio.id);
-      toast.success('Servicio eliminado');
-      cargarServicios();
-    } catch {
-      toast.error('Error eliminando');
-    }
-  };
-
   const sorted = [...servicios].sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || ''));
   const activo = sorted.find(s => s.estado === 'en_servicio');
+  const pausados = sorted.filter(s => s.estado === 'pausado');
   const pendientes = sorted.filter(s => ['asignado', 'en_camino'].includes(s.estado));
   const completados = sorted.filter(s => s.estado === 'completado');
   const totalGanado = completados.reduce((acc, s) => acc + (s.valor_final || 0), 0);
@@ -260,13 +248,6 @@ export const AgendaTecnico = () => {
                 </div>
               </div>
             </div>
-            <button
-              onClick={(e) => handleEliminarActivo(e, activo)}
-              className="w-full flex items-center justify-center gap-1.5 py-2 border-t border-white/20 text-white/70 hover:text-white hover:bg-white/10 transition-colors text-xs font-medium rounded-b-2xl"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Eliminar servicio de prueba
-            </button>
           </div>
         )}
 
@@ -336,6 +317,53 @@ export const AgendaTecnico = () => {
             ) : (
               <p className="text-sm text-slate-400 mt-1">Sin agenda próxima — disfruta tu día</p>
             )}
+          </div>
+        )}
+
+        {/* Paused services */}
+        {pausados.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h2 className="text-sm font-bold text-slate-700">Continuaciones pendientes</h2>
+              <span className="text-xs text-amber-600 font-semibold bg-amber-50 px-2.5 py-1 rounded-full">{pausados.length} pausado{pausados.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="space-y-2.5">
+              {pausados.map(s => (
+                <div
+                  key={s.id}
+                  className="bg-amber-50 rounded-2xl shadow-sm border border-amber-200 overflow-hidden cursor-pointer hover:shadow-md transition-all"
+                  onClick={() => navigate(`/tecnico/servicio/${s.id}`)}
+                >
+                  <div className="p-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="text-center shrink-0 min-w-[44px]">
+                        <p className="text-base font-bold text-amber-800 leading-tight">{s.hora_inicio || '--:--'}</p>
+                        <p className="text-[10px] text-amber-500">{s.hora_fin || ''}</p>
+                      </div>
+                      <div className="w-px h-10 bg-amber-200 shrink-0" />
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="h-10 w-10 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm shrink-0 border border-amber-200">
+                          {s.cliente?.nombre?.charAt(0) || '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm text-slate-800 truncate">{s.cliente?.nombre || 'Cliente'}</p>
+                          {s.nota_pausa && (
+                            <p className="text-xs text-amber-700 truncate mt-0.5">"{s.nota_pausa}"</p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); navigate(`/tecnico/servicio/${s.id}`); }}
+                        className="shrink-0 h-11 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 flex items-center gap-1.5 text-xs font-bold text-white transition-colors shadow-sm"
+                      >
+                        <Wrench className="h-4 w-4" />
+                        <span>Retomar</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -473,13 +501,6 @@ export const AgendaTecnico = () => {
                       </div>
 
                       <div className="px-4 pb-4 flex gap-2">
-                        <button
-                          onClick={(e) => handleEliminarActivo(e, s)}
-                          className="h-11 px-4 rounded-xl bg-red-50 hover:bg-red-100 border border-red-100 text-red-500 flex items-center justify-center transition-colors shrink-0"
-                          title="Eliminar servicio"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
                         {s.cliente?.telefono && (
                           <a
                             href={`tel:${s.cliente.telefono}`}

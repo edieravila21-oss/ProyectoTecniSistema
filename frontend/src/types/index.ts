@@ -1,12 +1,12 @@
 export type Rol = 'admin' | 'tecnico';
 export type Especialidad = 'aires' | 'neveras' | 'ambos';
 export type TipoEquipo = 'aire_acondicionado' | 'nevera' | 'otro';
-export type EstadoServicio = 'pendiente' | 'asignado' | 'en_camino' | 'en_servicio' | 'completado' | 'cancelado';
+export type EstadoServicio = 'pendiente' | 'asignado' | 'en_camino' | 'en_servicio' | 'pausado' | 'completado' | 'cancelado';
 export type MetodoPago = 'efectivo' | 'transferencia' | 'link_pago';
 export type OrigenServicio = 'whatsapp' | 'manual';
 export type CategoriaChecklist = 'llegada' | 'diagnostico' | 'reparacion' | 'cierre';
 export type TipoFoto = 'antes' | 'durante' | 'despues';
-export type TipoEvento = 'creado' | 'asignado' | 'en_camino' | 'llegada' | 'en_servicio' | 'completado' | 'cancelado' | 'nota' | 'foto_subida' | 'checklist_item';
+export type TipoEvento = 'creado' | 'asignado' | 'en_camino' | 'llegada' | 'en_servicio' | 'pausado' | 'completado' | 'cancelado' | 'nota' | 'foto_subida' | 'checklist_item';
 
 export interface Usuario {
   id: string;
@@ -80,6 +80,8 @@ export interface Servicio {
   calificacion_cliente?: number;
   notas_admin?: string;
   notas_tecnico?: string;
+  nota_pausa?: string;
+  fecha_pausa?: string;
   falla_confirmada?: boolean;
   diagnostico_final?: string;
   repuestos?: { nombre: string; cantidad: number; precio_unitario: number }[];

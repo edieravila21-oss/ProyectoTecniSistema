@@ -29,6 +29,7 @@ enum EstadoServicio {
   asignado
   en_camino
   en_servicio
+  pausado
   completado
   cancelado
 }
@@ -96,6 +97,7 @@ enum TipoEvento {
   en_camino
   llegada
   en_servicio
+  pausado
   completado
   cancelado
   nota
@@ -221,6 +223,8 @@ model Servicio {
   calificacion_cliente Int?
   notas_admin         String?
   notas_tecnico       String?
+  nota_pausa          String?
+  fecha_pausa         DateTime?
   falla_confirmada    Boolean?
   diagnostico_final   String?
   repuestos           Json?

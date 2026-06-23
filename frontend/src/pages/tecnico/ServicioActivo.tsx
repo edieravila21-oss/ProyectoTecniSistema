@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   getServicio, cambiarEstadoServicio, marcarChecklistItem,
   subirFoto, eliminarFoto, guardarFirma, agregarNota, actualizarServicio,
-  getHistorialEquipo, eliminarServicio, corregirEquipo, registrarEquipo,
+  getHistorialEquipo, corregirEquipo, registrarEquipo,
 } from '@/api/servicios';
 import { cacheServicio, getCachedServicio, enqueueChecklist, enqueueFoto } from '@/lib/offlineDb';
 import { processSyncQueue } from '@/lib/syncManager';
@@ -21,8 +21,9 @@ import type { Servicio, MetodoPago } from '@/types';
 import {
   Phone, MapPin, Camera, Check, CheckCircle, WifiOff,
   Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
-  User, Clock, DollarSign, Star, Plus, X,
+  User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle,
 } from 'lucide-react';
+import { format, addDays } from 'date-fns';
 import SignatureCanvas from 'react-signature-canvas';
 
 interface HistorialCliente {
@@ -97,6 +98,10 @@ export const ServicioActivo = () => {
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
   const [showCustomRepuesto, setShowCustomRepuesto] = useState(false);
   const [customRepuestoNombre, setCustomRepuestoNombre] = useState('');
+  const [modalPausa, setModalPausa] = useState(false);
+  const [notaPausa, setNotaPausa] = useState('');
+  const [fechaReanudacion, setFechaReanudacion] = useState('');
+  const [horaReanudacion, setHoraReanudacion] = useState('');
 
   const fetchServicio = async () => {
     if (!id) return;
@@ -126,7 +131,7 @@ export const ServicioActivo = () => {
     // Solo calcula el paso en la carga inicial — no en refreshes posteriores
     if (!initialLoadDone.current) {
       initialLoadDone.current = true;
-      if (data.estado === 'asignado' || data.estado === 'en_camino') setPasoActual(0);
+      if (data.estado === 'asignado' || data.estado === 'en_camino' || data.estado === 'pausado') setPasoActual(0);
       else if (data.estado === 'en_servicio') {
         const cl = data.checklist || [];
         const llegada = cl.filter(c => c.categoria === 'llegada');
@@ -210,15 +215,35 @@ export const ServicioActivo = () => {
     finally { setSaving(false); }
   };
 
-  const handleEliminar = async () => {
-    if (!id || !servicio) return;
-    const confirmar = window.confirm(`¿Eliminar el servicio de "${servicio.cliente?.nombre || 'este cliente'}"? Esta acción no se puede deshacer.`);
-    if (!confirmar) return;
+  const handlePausar = async () => {
+    if (!id || !notaPausa.trim() || !fechaReanudacion || !horaReanudacion) return;
+    setSaving(true);
     try {
-      await eliminarServicio(id);
-      toast.success('Servicio eliminado');
+      await cambiarEstadoServicio(id, 'pausado', { nota_pausa: notaPausa.trim(), fecha_reanudacion: fechaReanudacion, hora_reanudacion: horaReanudacion });
+      toast.success('Servicio pausado');
+      setModalPausa(false);
       navigate('/tecnico/agenda');
-    } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error eliminando'); }
+    } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error al pausar'); }
+    finally { setSaving(false); }
+  };
+
+  const handleRetomar = async () => {
+    if (!id || !servicio) return;
+    setSaving(true);
+    try {
+      await cambiarEstadoServicio(id, 'en_servicio');
+      toast.success('Servicio reanudado');
+      const cl = servicio.checklist || [];
+      const llegada = cl.filter(c => c.categoria === 'llegada');
+      const diag = cl.filter(c => c.categoria === 'diagnostico');
+      const rep = cl.filter(c => c.categoria === 'reparacion');
+      if (rep.every(c => c.completado)) setPasoActual(4);
+      else if (diag.every(c => c.completado)) setPasoActual(3);
+      else if (llegada.every(c => c.completado)) setPasoActual(2);
+      else setPasoActual(1);
+      fetchServicio();
+    } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error al retomar'); }
+    finally { setSaving(false); }
   };
 
   const handleChecklistItem = async (itemId: string) => {
@@ -518,15 +543,33 @@ export const ServicioActivo = () => {
                   Continuar servicio <ArrowRight className="h-5 w-5 ml-1" />
                 </Button>
               )}
-              {/* Botón eliminar — solo si el servicio no ha iniciado */}
-              {['asignado', 'en_camino', 'pendiente'].includes(servicio.estado) && (
+              {servicio.estado === 'en_servicio' && (
                 <button
-                  onClick={handleEliminar}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-xs text-red-400 hover:text-red-600 transition-colors mt-1"
+                  onClick={() => {
+                    setFechaReanudacion(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
+                    setHoraReanudacion(servicio.hora_inicio || '');
+                    setNotaPausa('');
+                    setModalPausa(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-xs text-amber-600 hover:text-amber-700 transition-colors mt-1"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Eliminar servicio de prueba
+                  <PauseCircle className="h-4 w-4" />
+                  Pausar y continuar otro día
                 </button>
+              )}
+              {servicio.estado === 'pausado' && (
+                <div className="space-y-3">
+                  {servicio.nota_pausa && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+                      <p className="font-semibold text-xs text-amber-600 mb-1">Motivo de pausa</p>
+                      {servicio.nota_pausa}
+                    </div>
+                  )}
+                  <Button className="w-full min-h-12 text-base bg-amber-500 hover:bg-amber-600" onClick={handleRetomar} disabled={saving}>
+                    <PlayCircle className="h-5 w-5 mr-2" />
+                    Retomar servicio
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1619,6 +1662,65 @@ export const ServicioActivo = () => {
         >
           <Phone className="h-6 w-6 text-white" />
         </a>
+      )}
+
+      {/* Modal pausa */}
+      {modalPausa && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <PauseCircle className="h-5 w-5 text-amber-500" />
+                <h3 className="font-bold text-lg">Pausar servicio</h3>
+              </div>
+              <button onClick={() => setModalPausa(false)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Motivo de la pausa</label>
+              <textarea
+                value={notaPausa}
+                onChange={e => setNotaPausa(e.target.value)}
+                placeholder="Ej: Falta repuesto, se agenda para mañana..."
+                rows={3}
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">Fecha de reanudación</label>
+                <input
+                  type="date"
+                  value={fechaReanudacion}
+                  min={format(addDays(new Date(), 1), 'yyyy-MM-dd')}
+                  onChange={e => setFechaReanudacion(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">Hora</label>
+                <input
+                  type="time"
+                  value={horaReanudacion}
+                  onChange={e => setHoraReanudacion(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handlePausar}
+              disabled={saving || !notaPausa.trim() || !fechaReanudacion || !horaReanudacion}
+              className="w-full min-h-12 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold flex items-center justify-center gap-2 transition-colors"
+            >
+              <PauseCircle className="h-5 w-5" />
+              Confirmar pausa
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

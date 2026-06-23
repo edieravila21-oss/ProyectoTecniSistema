@@ -389,7 +389,7 @@ const actualizar = async (req, res, next) => {
 
 const cambiarEstado = async (req, res, next) => {
   try {
-    const { estado, motivo_cancelacion } = req.body;
+    const { estado, motivo_cancelacion, nota_pausa, fecha_reanudacion, hora_reanudacion } = req.body;
     const servicio = await prisma.servicio.findUnique({
       where: { id: req.params.id },
       include: {
@@ -465,11 +465,30 @@ const cambiarEstado = async (req, res, next) => {
       }
     }
 
+    if (estado === 'pausado') {
+      if (!nota_pausa) {
+        return res.status(400).json({ success: false, error: 'Se requiere una nota para pausar el servicio', code: 'NOTA_REQUERIDA' });
+      }
+      if (!fecha_reanudacion || !hora_reanudacion) {
+        return res.status(400).json({ success: false, error: 'Se requiere fecha y hora de reanudación', code: 'FECHA_REQUERIDA' });
+      }
+    }
+
     const updateData = { estado };
     if (estado === 'en_camino') updateData.fecha_en_camino = new Date();
     if (estado === 'en_servicio') updateData.fecha_inicio_real = new Date();
     if (estado === 'completado') updateData.fecha_fin_real = new Date();
     if (estado === 'cancelado' && motivo_cancelacion) updateData.notas_admin = motivo_cancelacion;
+    if (estado === 'pausado') {
+      updateData.nota_pausa = nota_pausa;
+      updateData.fecha_pausa = new Date();
+      updateData.fecha_programada = new Date(fecha_reanudacion);
+      updateData.hora_inicio = hora_reanudacion;
+    }
+    if (estado === 'en_servicio' && servicio.estado === 'pausado') {
+      updateData.nota_pausa = null;
+      updateData.fecha_pausa = null;
+    }
 
     const actualizado = await prisma.servicio.update({
       where: { id: req.params.id },
@@ -485,9 +504,11 @@ const cambiarEstado = async (req, res, next) => {
     await prisma.eventoServicio.create({
       data: {
         servicioId: req.params.id,
-        tipo: estado === 'en_servicio' ? 'en_servicio' : estado === 'en_camino' ? 'en_camino' : estado,
+        tipo: estado === 'en_servicio' ? 'en_servicio' : estado === 'en_camino' ? 'en_camino' : estado === 'pausado' ? 'pausado' : estado,
         descripcion: estado === 'cancelado' && motivo_cancelacion
           ? `Servicio cancelado. Motivo: ${motivo_cancelacion}`
+          : estado === 'pausado'
+          ? `Servicio pausado. Motivo: ${nota_pausa}. Reanuda el ${fecha_reanudacion} a las ${hora_reanudacion}`
           : `Estado cambiado a ${estado}`,
         usuarioId: req.usuario.id,
       },

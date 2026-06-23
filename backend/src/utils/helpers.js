@@ -30,6 +30,7 @@ const estadoLabels = {
   asignado: 'Asignado',
   en_camino: 'En camino',
   en_servicio: 'En servicio',
+  pausado: 'Pausado',
   completado: 'Completado',
   cancelado: 'Cancelado',
 };
@@ -38,7 +39,8 @@ const transicionesPermitidas = {
   pendiente: ['asignado', 'cancelado'],
   asignado: ['en_camino', 'cancelado'],
   en_camino: ['en_servicio', 'cancelado'],
-  en_servicio: ['completado', 'cancelado'],
+  en_servicio: ['completado', 'cancelado', 'pausado'],
+  pausado: ['en_servicio', 'cancelado'],
   completado: [],
   cancelado: [],
 };
