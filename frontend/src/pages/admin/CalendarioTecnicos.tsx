@@ -20,6 +20,7 @@ import {
   Phone, Wrench, Clock, AlertTriangle, Plus,
   Ban, Coffee, GraduationCap, Stethoscope, Palmtree, CalendarOff,
   CheckCircle2, CalendarPlus, Repeat, Pencil, Save,
+  CalendarClock, ArrowRightLeft, XCircle,
 } from 'lucide-react';
 import {
   format, addDays, addMonths, isToday,
@@ -137,6 +138,13 @@ export const CalendarioTecnicos = () => {
   const [trasladandoTecnico, setTrasladandoTecnico] = useState<{ id: string; nombre: string } | null>(null);
   const [trasladandoSlot, setTrasladandoSlot] = useState<string | null>(null);
   const [trasladandoId, setTrasladandoId] = useState<string | null>(null);
+
+  // Continuar después state
+  const [modalContinuarCal, setModalContinuarCal] = useState(false);
+  const [continuarCalFecha, setContinuarCalFecha] = useState('');
+  const [continuarCalHora, setContinuarCalHora] = useState('');
+  const [continuarCalNota, setContinuarCalNota] = useState('');
+  const [continuarCalLoading, setContinuarCalLoading] = useState(false);
 
   // Edit service state
   const [editandoServicio, setEditandoServicio] = useState(false);
@@ -681,6 +689,39 @@ export const CalendarioTecnicos = () => {
       toast.error(err?.response?.data?.error || 'Error cancelando servicio');
     } finally {
       setCancelando(false);
+    }
+  };
+
+  const handleContinuarCalDespues = async () => {
+    if (!selectedServicio || !continuarCalFecha || !continuarCalHora) {
+      toast.error('Elige fecha y hora para reagendar'); return;
+    }
+    setContinuarCalLoading(true);
+    try {
+      const nota = continuarCalNota.trim();
+      await cambiarEstadoServicio(selectedServicio.id, 'cancelado', {
+        motivo_cancelacion: `Reagendado para ${continuarCalFecha} ${continuarCalHora}${nota ? '. ' + nota : ''}`,
+      });
+      await crearServicio({
+        clienteId: selectedServicio.clienteId,
+        equipoId: selectedServicio.equipoId,
+        tecnicoId: selectedServicio.tecnicoId ?? undefined,
+        tipo_servicio: selectedServicio.tipo_servicio,
+        descripcion_falla: selectedServicio.descripcion_falla,
+        direccion_servicio: selectedServicio.direccion_servicio,
+        valor_estimado: selectedServicio.valor_estimado ?? undefined,
+        notas_admin: nota || selectedServicio.notas_admin,
+        fecha_programada: continuarCalFecha,
+        hora_inicio: continuarCalHora,
+      });
+      toast.success('Servicio reagendado correctamente');
+      setModalContinuarCal(false);
+      setSelectedServicio(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Error al reagendar');
+    } finally {
+      setContinuarCalLoading(false);
     }
   };
 
@@ -1292,6 +1333,34 @@ export const CalendarioTecnicos = () => {
               )}
               {!editandoServicio && (
               <div className="space-y-3">
+
+                {/* ── TRES BOTONES DE ACCIÓN ── */}
+                {!['completado', 'cancelado'].includes(selectedServicio.estado) && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => { setContinuarCalFecha(format(new Date(), 'yyyy-MM-dd')); setContinuarCalHora(''); setContinuarCalNota(''); setModalContinuarCal(true); }}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                    >
+                      <CalendarClock className="h-5 w-5" />
+                      <span>Continuar después</span>
+                    </button>
+                    <button
+                      onClick={() => { resetTraslado(); setTrasladando(true); setCancelConfirm(false); }}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
+                    >
+                      <ArrowRightLeft className="h-5 w-5" />
+                      <span>Traslado</span>
+                    </button>
+                    <button
+                      onClick={() => { setCancelConfirm(true); setCancelMotivo(''); setCancelFotos([]); setTrasladando(false); }}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors"
+                    >
+                      <XCircle className="h-5 w-5" />
+                      <span>Cancelar servicio</span>
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <EstadoBadge estado={selectedServicio.estado} />
                   {selectedServicio.origen === 'whatsapp' && (
@@ -1391,19 +1460,10 @@ export const CalendarioTecnicos = () => {
                 </div>
 
                 {/* Trasladar servicio */}
-                {['pendiente', 'asignado'].includes(selectedServicio.estado) && !cancelConfirm && (
+                {trasladando && !cancelConfirm && (
                   <div className="border border-blue-100 bg-blue-50/40 rounded-xl p-4">
-                    {!trasladando && (
-                      <button
-                        onClick={() => { setTrasladando(true); setTrasladandoTecnico(null); setTrasladandoSlot(null); }}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-blue-200 text-blue-600 text-sm font-semibold hover:bg-blue-50 hover:border-blue-300 transition-colors"
-                      >
-                        <Users className="h-4 w-4" /> Trasladar a otro técnico
-                      </button>
-                    )}
-
                     {/* Paso 1: elegir técnico */}
-                    {trasladando && !trasladandoTecnico && (
+                    {!trasladandoTecnico && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-semibold text-blue-700">¿A qué técnico?</p>
@@ -1555,6 +1615,73 @@ export const CalendarioTecnicos = () => {
                 )}
               </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Continuar después */}
+      {modalContinuarCal && selectedServicio && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setModalContinuarCal(false)} />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 mx-4">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-amber-500" />
+                <h3 className="font-bold text-slate-800">Continuar después</h3>
+              </div>
+              <button onClick={() => setModalContinuarCal(false)} className="p-2 rounded-xl hover:bg-slate-100">
+                <X className="h-4 w-4 text-slate-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-slate-500">
+                Se cancelará el servicio actual y se creará uno nuevo para la fecha seleccionada con el mismo técnico y cliente.
+              </p>
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Nueva fecha</label>
+                <input
+                  type="date"
+                  value={continuarCalFecha}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  onChange={e => setContinuarCalFecha(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Nueva hora de inicio</label>
+                <input
+                  type="time"
+                  value={continuarCalHora}
+                  onChange={e => setContinuarCalHora(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Nota (opcional)</label>
+                <textarea
+                  value={continuarCalNota}
+                  onChange={e => setContinuarCalNota(e.target.value)}
+                  placeholder="Motivo o instrucciones adicionales..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setModalContinuarCal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Volver
+                </button>
+                <button
+                  onClick={handleContinuarCalDespues}
+                  disabled={!continuarCalFecha || !continuarCalHora || continuarCalLoading}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {continuarCalLoading ? 'Reagendando…' : 'Confirmar'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
