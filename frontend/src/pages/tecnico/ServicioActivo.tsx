@@ -547,15 +547,15 @@ export const ServicioActivo = () => {
               {servicio.estado === 'en_servicio' && (
                 <button
                   onClick={() => {
-                    setFechaReanudacion(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
-                    setHoraReanudacion(servicio.hora_inicio || '');
+                    setFechaReanudacion(format(new Date(), 'yyyy-MM-dd'));
+                    setHoraReanudacion('');
                     setNotaPausa('');
                     setModalPausa(true);
                   }}
                   className="w-full flex items-center justify-center gap-2 py-2 text-xs text-amber-600 hover:text-amber-700 transition-colors mt-1"
                 >
                   <PauseCircle className="h-4 w-4" />
-                  Pausar y continuar otro día
+                  Continuar después
                 </button>
               )}
               {servicio.estado === 'pausado' && (
@@ -1672,7 +1672,7 @@ export const ServicioActivo = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <PauseCircle className="h-5 w-5 text-amber-500" />
-                <h3 className="font-bold text-lg">Pausar servicio</h3>
+                <h3 className="font-bold text-lg">Continuar después</h3>
               </div>
               <button onClick={() => setModalPausa(false)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
                 <X className="h-4 w-4" />
@@ -1696,7 +1696,7 @@ export const ServicioActivo = () => {
                 <input
                   type="date"
                   value={fechaReanudacion}
-                  min={format(addDays(new Date(), 1), 'yyyy-MM-dd')}
+                  min={format(new Date(), 'yyyy-MM-dd')}
                   onChange={e => setFechaReanudacion(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                 />

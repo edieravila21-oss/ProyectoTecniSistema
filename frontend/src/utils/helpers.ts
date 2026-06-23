@@ -27,6 +27,7 @@ export const estadoConfig: Record<string, { label: string; color: string; bg: st
   asignado: { label: 'Asignado', color: 'text-blue-700', bg: 'bg-blue-100' },
   en_camino: { label: 'En camino', color: 'text-yellow-700', bg: 'bg-yellow-100' },
   en_servicio: { label: 'En servicio', color: 'text-orange-700', bg: 'bg-orange-100' },
+  pausado: { label: 'Pausado', color: 'text-amber-700', bg: 'bg-amber-100' },
   completado: { label: 'Completado', color: 'text-green-700', bg: 'bg-green-100' },
   cancelado: { label: 'Cancelado', color: 'text-red-700', bg: 'bg-red-100' },
 };

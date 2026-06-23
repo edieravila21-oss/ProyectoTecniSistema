@@ -567,8 +567,20 @@ export const Servicios = () => {
               ))}
             </div>
 
-            {/* Botón eliminar */}
-            <div className="p-5 border-t border-slate-100">
+            {/* Acciones destructivas */}
+            <div className="p-5 border-t border-slate-100 space-y-2">
+              {selected.estado !== 'completado' && selected.estado !== 'cancelado' && (
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`¿Cancelar el servicio de "${selected.cliente?.nombre || 'este cliente'}"? Esta acción no se puede deshacer.`)) return;
+                    await handleCambiarEstado(selected.id, 'cancelado');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 transition-colors text-sm font-medium"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Cancelar servicio
+                </button>
+              )}
               <button
                 onClick={handleEliminar}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors text-sm font-medium"
