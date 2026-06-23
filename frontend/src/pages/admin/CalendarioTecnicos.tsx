@@ -1536,16 +1536,8 @@ export const CalendarioTecnicos = () => {
                 )}
 
                 {/* Cancelar servicio */}
-                {['pendiente', 'asignado', 'en_camino', 'en_servicio'].includes(selectedServicio.estado) && (
+                {cancelConfirm && (
                   <div className="border border-red-100 bg-red-50/40 rounded-xl p-4">
-                    {!cancelConfirm ? (
-                      <button
-                        onClick={() => { setCancelConfirm(true); setCancelMotivo(''); setCancelFotos([]); }}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 hover:border-red-300 transition-colors"
-                      >
-                        <Ban className="h-4 w-4" /> Cancelar servicio
-                      </button>
-                    ) : (
                       <div className="space-y-3">
                         <p className="text-sm font-semibold text-red-700">Cancelar servicio</p>
 
@@ -1610,7 +1602,6 @@ export const CalendarioTecnicos = () => {
                           </button>
                         </div>
                       </div>
-                    )}
                   </div>
                 )}
               </div>
