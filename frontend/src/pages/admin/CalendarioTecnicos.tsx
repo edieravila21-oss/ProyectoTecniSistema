@@ -173,6 +173,9 @@ export const CalendarioTecnicos = () => {
     fecha_programada: '', hora_inicio: '08:00', hora_fin: '10:00',
     direccion_servicio: '', valor_estimado: '40000',
   });
+  const [citaExtendida, setCitaExtendida] = useState(false);
+  const [citaAlmuerzoInicio, setCitaAlmuerzoInicio] = useState('12:30');
+  const [citaAlmuerzoFin, setCitaAlmuerzoFin] = useState('13:30');
 
   const HORAS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
   const HORA_INICIO = 7;
@@ -499,6 +502,9 @@ export const CalendarioTecnicos = () => {
       todos_tecnicos: false,
     });
     setCitaForm(f => ({ ...f, tecnicoId: tecnicoId || '', fecha_programada: fechaStr, clienteId: '', equipoId: '' }));
+    setCitaExtendida(false);
+    setCitaAlmuerzoInicio('12:30');
+    setCitaAlmuerzoFin('13:30');
     setClienteBusqueda('');
     setClienteSeleccionado(null);
     setClientes([]);
@@ -584,16 +590,26 @@ export const CalendarioTecnicos = () => {
       toast.error('Los sábados solo se atiende hasta las 12:00'); return;
     }
     if (!citaForm.hora_inicio) { toast.error('Selecciona la hora'); return; }
+    if (citaExtendida && (!citaAlmuerzoInicio || !citaAlmuerzoFin)) {
+      toast.error('Completa los horarios de almuerzo'); return;
+    }
     setSaving(true);
     try {
-      await crearServicio({
+      const base = {
         ...citaForm,
         valor_estimado: parseFloat(citaForm.valor_estimado) || undefined,
         equipoId: citaForm.equipoId || undefined,
         tecnicoId: citaForm.tecnicoId || undefined,
         origen: 'manual',
-      } as any);
-      toast.success('Cita agendada correctamente');
+      } as any;
+      if (citaExtendida) {
+        await crearServicio({ ...base, hora_fin: citaAlmuerzoInicio, notas_admin: 'Parte 1 de 2 — continúa después del almuerzo' });
+        await crearServicio({ ...base, hora_inicio: citaAlmuerzoFin, notas_admin: 'Parte 2 de 2 — continuación' });
+        toast.success('Servicio extendido agendado: 2 bloques creados');
+      } else {
+        await crearServicio(base);
+        toast.success('Cita agendada correctamente');
+      }
       setShowModal(false);
       fetchData();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Error creando cita'); }
@@ -1805,6 +1821,56 @@ export const CalendarioTecnicos = () => {
                       </select>
                     </div>
                   </div>
+
+                  {/* Servicio extendido */}
+                  <div
+                    onClick={() => setCitaExtendida(v => !v)}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors ${citaExtendida ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
+                  >
+                    <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${citaExtendida ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                      <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${citaExtendida ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700">Servicio extendido</p>
+                      <p className="text-[11px] text-slate-400">Crea 2 bloques respetando la hora de almuerzo</p>
+                    </div>
+                  </div>
+
+                  {citaExtendida && (
+                    <div className="space-y-3 p-4 bg-indigo-50 rounded-xl border border-indigo-200">
+                      <p className="text-xs font-semibold text-indigo-700">Pausa de almuerzo</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-bold text-indigo-500 uppercase block mb-1">Inicio almuerzo</label>
+                          <input
+                            type="time"
+                            value={citaAlmuerzoInicio}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setCitaAlmuerzoInicio(e.target.value)}
+                            className="w-full h-10 px-3 rounded-xl border border-indigo-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-indigo-500 uppercase block mb-1">Fin almuerzo</label>
+                          <input
+                            type="time"
+                            value={citaAlmuerzoFin}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setCitaAlmuerzoFin(e.target.value)}
+                            className="w-full h-10 px-3 rounded-xl border border-indigo-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2 text-[11px] font-medium text-indigo-600">
+                        <span className="flex-1 text-center bg-white rounded-lg py-1.5 border border-indigo-200">
+                          Bloque 1: {citaForm.hora_inicio} – {citaAlmuerzoInicio}
+                        </span>
+                        <span className="flex-1 text-center bg-white rounded-lg py-1.5 border border-indigo-200">
+                          Bloque 2: {citaAlmuerzoFin} – {citaForm.hora_fin}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Aviso sábado */}
                   {citaForm.fecha_programada && esSabado(new Date(citaForm.fecha_programada + 'T00:00:00')) && (
