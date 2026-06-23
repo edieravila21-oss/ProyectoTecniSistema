@@ -1023,15 +1023,15 @@ const cerrarVencidos = async (req, res, next) => {
 
     await prisma.servicio.updateMany({
       where: { id: { in: ids } },
-      data: { estado: 'completado' },
+      data: { estado: 'cancelado' },
     });
 
     // Crear evento de auditoría para cada uno
     await prisma.eventoServicio.createMany({
       data: ids.map(id => ({
         servicioId: id,
-        tipo: 'completado',
-        descripcion: 'Cerrado automáticamente — servicio de día anterior sin cerrar',
+        tipo: 'cancelado',
+        descripcion: 'Cancelado automáticamente — servicio de día anterior sin cerrar',
         usuarioId: req.usuario.id,
       })),
       skipDuplicates: true,

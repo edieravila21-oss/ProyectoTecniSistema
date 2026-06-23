@@ -897,13 +897,14 @@ export const CalendarioTecnicos = () => {
             <p className="text-sm font-semibold text-red-700">
               {vencidosCount} servicio{vencidosCount !== 1 ? 's' : ''} de días anteriores sin cerrar
             </p>
+            <p className="text-xs text-red-500 hidden sm:block">— se cancelarán automáticamente</p>
           </div>
           <button
             onClick={handleCerrarVencidos}
             disabled={cerrandoVencidos}
             className="shrink-0 px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
           >
-            {cerrandoVencidos ? 'Cerrando…' : 'Cerrar todos'}
+            {cerrandoVencidos ? 'Cancelando…' : 'Cancelar todos'}
           </button>
         </div>
       )}
