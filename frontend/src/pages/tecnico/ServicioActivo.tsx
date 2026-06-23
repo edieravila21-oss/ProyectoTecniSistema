@@ -181,6 +181,7 @@ export const ServicioActivo = () => {
         marcaOtra: esConocida ? '' : marcaEquipo,
         capacidad: servicio.equipo.notas || '',
         tecnologia: '',
+        tipo: servicio.equipo.tipo || '',
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
