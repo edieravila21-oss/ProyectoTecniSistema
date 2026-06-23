@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSocketStore } from '@/store/socketStore';
-import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio, subirFoto, asignarTecnico } from '@/api/servicios';
+import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio, subirFoto, asignarTecnico, cerrarServiciosVencidos } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
@@ -117,6 +117,8 @@ export const CalendarioTecnicos = () => {
   const [modalMode, setModalMode] = useState<ModalMode>('bloqueo');
   const [saving, setSaving] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [vencidosCount, setVencidosCount] = useState(0);
+  const [cerrandoVencidos, setCerrandoVencidos] = useState(false);
   const [cancelMotivo, setCancelMotivo] = useState('');
   const [cancelFotos, setCancelFotos] = useState<File[]>([]);
   const [cancelando, setCancelando] = useState(false);
@@ -216,6 +218,37 @@ export const CalendarioTecnicos = () => {
   }, [fecha]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Check for overdue services on load
+  useEffect(() => {
+    const checkVencidos = async () => {
+      try {
+        const hoy = format(new Date(), 'yyyy-MM-dd');
+        const res = await getServicios({ hasta: hoy, limit: '200' });
+        const activos = res.data.data.filter(s =>
+          ['pendiente', 'asignado', 'en_camino', 'en_servicio', 'pausado'].includes(s.estado) &&
+          String(s.fecha_programada).substring(0, 10) < hoy
+        );
+        setVencidosCount(activos.length);
+      } catch (_) {}
+    };
+    checkVencidos();
+  }, []);
+
+  const handleCerrarVencidos = async () => {
+    setCerrandoVencidos(true);
+    try {
+      const res = await cerrarServiciosVencidos();
+      const n = res.data.data.cerrados;
+      toast.success(`${n} servicio${n !== 1 ? 's' : ''} vencido${n !== 1 ? 's' : ''} cerrado${n !== 1 ? 's' : ''}`);
+      setVencidosCount(0);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Error cerrando servicios');
+    } finally {
+      setCerrandoVencidos(false);
+    }
+  };
 
   const { socket } = useSocketStore();
   useEffect(() => {
@@ -856,6 +889,25 @@ export const CalendarioTecnicos = () => {
         </Button>
       </div>
 
+      {/* Banner servicios vencidos */}
+      {vencidosCount > 0 && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <p className="text-sm font-semibold text-red-700">
+              {vencidosCount} servicio{vencidosCount !== 1 ? 's' : ''} de días anteriores sin cerrar
+            </p>
+          </div>
+          <button
+            onClick={handleCerrarVencidos}
+            disabled={cerrandoVencidos}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+          >
+            {cerrandoVencidos ? 'Cerrando…' : 'Cerrar todos'}
+          </button>
+        </div>
+      )}
+
       {/* Controls */}
       <Card className="p-3">
         <div className="flex items-center gap-3 flex-wrap">
@@ -1136,6 +1188,11 @@ export const CalendarioTecnicos = () => {
                           const enCamino = s.estado === 'en_camino';
                           const isDraggable = ['pendiente', 'asignado'].includes(s.estado);
                           const isDragging = dragInfo?.tipo === 'servicio' && dragInfo.id === s.id;
+                          const ahora = new Date();
+                          const horaActual = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+                          const esHoy = format(fecha, 'yyyy-MM-dd') === format(ahora, 'yyyy-MM-dd');
+                          const vencido = s.hora_fin && s.hora_fin < horaActual && esHoy &&
+                            ['pendiente', 'asignado', 'en_camino', 'en_servicio', 'pausado'].includes(s.estado);
                           return (
                             <button
                               key={s.id}
@@ -1144,17 +1201,23 @@ export const CalendarioTecnicos = () => {
                               onDragEnd={() => { setDragInfo(null); setDropPreview(null); }}
                               style={{ left, width, top: 4, bottom: 4, position: 'absolute' }}
                               onClick={() => !dragInfo && setSelectedServicio(s)}
-                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${estadoColor[s.estado]} ${enEjecucion ? 'ring-2 ring-orange-400 ring-offset-1' : ''} ${isDraggable ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''}`}
+                              className={`rounded-lg border text-left px-2 overflow-hidden hover:shadow-lg hover:z-30 transition-all z-10 ${vencido ? 'bg-red-50 border-red-300 ring-2 ring-red-400 ring-offset-1' : estadoColor[s.estado]} ${enEjecucion && !vencido ? 'ring-2 ring-orange-400 ring-offset-1' : ''} ${isDraggable ? 'cursor-grab active:cursor-grabbing' : ''} ${isDragging ? 'opacity-40' : ''}`}
                             >
                               <div className="flex items-center justify-between gap-0.5">
                                 <p className="text-[10px] font-bold truncate">{s.hora_inicio}–{s.hora_fin}</p>
-                                {enEjecucion && (
+                                {vencido && (
+                                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                                  </span>
+                                )}
+                                {enEjecucion && !vencido && (
                                   <span className="relative flex h-2.5 w-2.5 shrink-0">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500" />
                                   </span>
                                 )}
-                                {enCamino && (
+                                {enCamino && !vencido && (
                                   <span className="relative flex h-2.5 w-2.5 shrink-0">
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
@@ -1162,12 +1225,15 @@ export const CalendarioTecnicos = () => {
                                 )}
                               </div>
                               <p className="text-[11px] font-semibold truncate leading-tight">{s.cliente?.nombre}</p>
-                              {enEjecucion && (
+                              {vencido && (
+                                <p className="text-[9px] font-bold text-red-600 truncate">⚠ Vencido — sin cerrar</p>
+                              )}
+                              {enEjecucion && !vencido && (
                                 <p className="text-[9px] font-bold text-orange-600 flex items-center gap-0.5 truncate">
                                   <Wrench className="h-2.5 w-2.5 shrink-0" /> En ejecución
                                 </p>
                               )}
-                              {!enEjecucion && s.equipo && (
+                              {!enEjecucion && !vencido && s.equipo && (
                                 <p className="text-[9px] opacity-60 truncate">{tipoEquipoLabel[s.equipo.tipo]}</p>
                               )}
                             </button>

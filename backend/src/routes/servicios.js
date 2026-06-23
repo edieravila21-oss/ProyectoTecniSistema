@@ -5,6 +5,7 @@ const {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
   obtenerChecklist, marcarChecklist, subirFoto, eliminarFoto, guardarFirma,
   guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo, registrarEquipo,
+  cerrarVencidos,
 } = require('../controllers/serviciosController');
 
 router.use(verifyToken);
@@ -26,5 +27,6 @@ router.post('/:id/notas', agregarNota);
 router.delete('/:id', eliminar);
 router.post('/:id/equipo', registrarEquipo);
 router.patch('/:id/equipo', corregirEquipo);
+router.post('/cerrar-vencidos', requireAdmin, cerrarVencidos);
 
 module.exports = router;
