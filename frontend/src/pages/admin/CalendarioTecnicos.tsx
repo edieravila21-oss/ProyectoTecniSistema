@@ -143,6 +143,7 @@ export const CalendarioTecnicos = () => {
   const [modalContinuarCal, setModalContinuarCal] = useState(false);
   const [continuarCalFecha, setContinuarCalFecha] = useState('');
   const [continuarCalHora, setContinuarCalHora] = useState('');
+  const [continuarCalHoraFin, setContinuarCalHoraFin] = useState('');
   const [continuarCalNota, setContinuarCalNota] = useState('');
   const [continuarCalLoading, setContinuarCalLoading] = useState(false);
 
@@ -693,14 +694,14 @@ export const CalendarioTecnicos = () => {
   };
 
   const handleContinuarCalDespues = async () => {
-    if (!selectedServicio || !continuarCalFecha || !continuarCalHora) {
-      toast.error('Elige fecha y hora para reagendar'); return;
+    if (!selectedServicio || !continuarCalFecha || !continuarCalHora || !continuarCalHoraFin) {
+      toast.error('Elige fecha, hora de inicio y hora fin'); return;
     }
     setContinuarCalLoading(true);
     try {
       const nota = continuarCalNota.trim();
       await cambiarEstadoServicio(selectedServicio.id, 'cancelado', {
-        motivo_cancelacion: `Reagendado para ${continuarCalFecha} ${continuarCalHora}${nota ? '. ' + nota : ''}`,
+        motivo_cancelacion: `Reagendado para ${continuarCalFecha} ${continuarCalHora}–${continuarCalHoraFin}${nota ? '. ' + nota : ''}`,
       });
       await crearServicio({
         clienteId: selectedServicio.clienteId,
@@ -713,6 +714,7 @@ export const CalendarioTecnicos = () => {
         notas_admin: nota || selectedServicio.notas_admin,
         fecha_programada: continuarCalFecha,
         hora_inicio: continuarCalHora,
+        hora_fin: continuarCalHoraFin,
       });
       toast.success('Servicio reagendado correctamente');
       setModalContinuarCal(false);
@@ -1338,7 +1340,7 @@ export const CalendarioTecnicos = () => {
                 {!['completado', 'cancelado'].includes(selectedServicio.estado) && (
                   <div className="grid grid-cols-3 gap-2">
                     <button
-                      onClick={() => { setContinuarCalFecha(format(new Date(), 'yyyy-MM-dd')); setContinuarCalHora(''); setContinuarCalNota(''); setModalContinuarCal(true); }}
+                      onClick={() => { setContinuarCalFecha(format(new Date(), 'yyyy-MM-dd')); setContinuarCalHora(''); setContinuarCalHoraFin(''); setContinuarCalNota(''); setModalContinuarCal(true); }}
                       className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
                     >
                       <CalendarClock className="h-5 w-5" />
@@ -1639,14 +1641,25 @@ export const CalendarioTecnicos = () => {
                   className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
                 />
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Nueva hora de inicio</label>
-                <input
-                  type="time"
-                  value={continuarCalHora}
-                  onChange={e => setContinuarCalHora(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Hora inicio</label>
+                  <input
+                    type="time"
+                    value={continuarCalHora}
+                    onChange={e => setContinuarCalHora(e.target.value)}
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Hora fin</label>
+                  <input
+                    type="time"
+                    value={continuarCalHoraFin}
+                    onChange={e => setContinuarCalHoraFin(e.target.value)}
+                    className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
               </div>
               <div>
                 <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1">Nota (opcional)</label>
@@ -1667,7 +1680,7 @@ export const CalendarioTecnicos = () => {
                 </button>
                 <button
                   onClick={handleContinuarCalDespues}
-                  disabled={!continuarCalFecha || !continuarCalHora || continuarCalLoading}
+                  disabled={!continuarCalFecha || !continuarCalHora || !continuarCalHoraFin || continuarCalLoading}
                   className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors disabled:opacity-50"
                 >
                   {continuarCalLoading ? 'Reagendando…' : 'Confirmar'}
