@@ -12,6 +12,7 @@ router.use(verifyToken);
 
 router.get('/', listar);
 router.post('/', crear);
+router.post('/cerrar-vencidos', requireAdmin, cerrarVencidos);
 router.get('/equipo/:equipo_id/historial', historialEquipo);
 router.get('/:id', obtener);
 router.put('/:id', actualizar);
@@ -27,6 +28,5 @@ router.post('/:id/notas', agregarNota);
 router.delete('/:id', eliminar);
 router.post('/:id/equipo', registrarEquipo);
 router.patch('/:id/equipo', corregirEquipo);
-router.post('/cerrar-vencidos', requireAdmin, cerrarVencidos);
 
 module.exports = router;

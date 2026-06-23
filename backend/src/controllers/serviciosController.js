@@ -1006,8 +1006,6 @@ const corregirEquipo = async (req, res, next) => {
 // Cierra automáticamente servicios activos cuya fecha_programada es de días anteriores
 const cerrarVencidos = async (req, res, next) => {
   try {
-    if (req.usuario.rol !== 'admin') return res.status(403).json({ success: false, error: 'Solo admins' });
-
     const hoyInicio = new Date();
     hoyInicio.setHours(0, 0, 0, 0);
 
@@ -1016,32 +1014,32 @@ const cerrarVencidos = async (req, res, next) => {
         estado: { in: ['pendiente', 'asignado', 'en_camino', 'en_servicio', 'pausado'] },
         fecha_programada: { lt: hoyInicio },
       },
-      select: { id: true, estado: true },
+      select: { id: true },
     });
 
     if (vencidos.length === 0) return res.json({ success: true, cerrados: 0 });
 
-    await prisma.$transaction(
-      vencidos.map(s =>
-        prisma.servicio.update({
-          where: { id: s.id },
-          data: {
-            estado: 'completado',
-            eventos: {
-              create: {
-                tipo: 'completado',
-                descripcion: 'Cerrado automáticamente — servicio de día anterior sin cerrar',
-                usuarioId: req.usuario.id,
-              },
-            },
-          },
-        })
-      )
-    );
+    const ids = vencidos.map(s => s.id);
 
-    try { getIO().to('admin').emit('servicios_vencidos_cerrados', { cantidad: vencidos.length }); } catch (_) {}
+    await prisma.servicio.updateMany({
+      where: { id: { in: ids } },
+      data: { estado: 'completado' },
+    });
 
-    res.json({ success: true, cerrados: vencidos.length });
+    // Crear evento de auditoría para cada uno
+    await prisma.eventoServicio.createMany({
+      data: ids.map(id => ({
+        servicioId: id,
+        tipo: 'completado',
+        descripcion: 'Cerrado automáticamente — servicio de día anterior sin cerrar',
+        usuarioId: req.usuario.id,
+      })),
+      skipDuplicates: true,
+    });
+
+    try { getIO().to('admin').emit('servicios_vencidos_cerrados', { cantidad: ids.length }); } catch (_) {}
+
+    res.json({ success: true, cerrados: ids.length });
   } catch (error) {
     next(error);
   }
