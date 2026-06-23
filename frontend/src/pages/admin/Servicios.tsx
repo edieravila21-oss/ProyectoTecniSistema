@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { getServicios, getServicio, cambiarEstadoServicio, asignarTecnico, eliminarServicio, actualizarServicio } from '@/api/servicios';
+import { getServicios, getServicio, cambiarEstadoServicio, asignarTecnico, eliminarServicio, actualizarServicio, crearServicio } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import type { Servicio, Usuario, ChecklistItem, EventoServicio } from '@/types';
 import {
   Search, X, ChevronDown, ChevronUp,
   CheckCircle, Trash2, AlertTriangle, Clock, Pencil, Save,
+  XCircle, ArrowRightLeft, CalendarClock,
 } from 'lucide-react';
 
 type EditForm = {
@@ -49,6 +50,12 @@ export const Servicios = () => {
   });
   const [saving, setSaving] = useState(false);
   const [proximoServicio, setProximoServicio] = useState<Servicio | null>(null);
+  const [modalTraslado, setModalTraslado] = useState(false);
+  const [nuevoTecnicoId, setNuevoTecnicoId] = useState('');
+  const [modalContinuar, setModalContinuar] = useState(false);
+  const [continuarFecha, setContinuarFecha] = useState('');
+  const [continuarHora, setContinuarHora] = useState('');
+  const [continuarNota, setContinuarNota] = useState('');
 
   const fetchServicios = useCallback(async () => {
     setLoading(true);
@@ -153,6 +160,51 @@ export const Servicios = () => {
       fetchServicios();
       if (selected?.id === id) openDrawer(id);
     } catch (e: any) { toast.error(e.response?.data?.error || 'Error'); }
+  };
+
+  const handleTraslado = async () => {
+    if (!selected || !nuevoTecnicoId) return;
+    setSaving(true);
+    try {
+      await asignarTecnico(selected.id, nuevoTecnicoId);
+      toast.success('Técnico reasignado');
+      setModalTraslado(false);
+      setNuevoTecnicoId('');
+      fetchServicios();
+      openDrawer(selected.id);
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Error en traslado'); }
+    finally { setSaving(false); }
+  };
+
+  const handleContinuarDespues = async () => {
+    if (!selected || !continuarFecha || !continuarHora) return;
+    setSaving(true);
+    try {
+      await cambiarEstadoServicio(selected.id, 'cancelado', {
+        motivo_cancelacion: `Reprogramado para el ${continuarFecha} a las ${continuarHora}${continuarNota ? `. ${continuarNota}` : ''}`,
+      });
+      await crearServicio({
+        clienteId: selected.clienteId,
+        equipoId: selected.equipoId,
+        tecnicoId: selected.tecnicoId,
+        tipo_servicio: selected.tipo_servicio,
+        descripcion_falla: selected.descripcion_falla,
+        direccion_servicio: selected.direccion_servicio,
+        valor_estimado: selected.valor_estimado,
+        notas_admin: continuarNota || selected.notas_admin,
+        fecha_programada: continuarFecha,
+        hora_inicio: continuarHora,
+      });
+      toast.success('Servicio reprogramado — nuevo servicio creado');
+      setModalContinuar(false);
+      setContinuarFecha('');
+      setContinuarHora('');
+      setContinuarNota('');
+      setDrawerOpen(false);
+      setSelected(null);
+      fetchServicios();
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Error reprogramando'); }
+    finally { setSaving(false); }
   };
 
   const handleEliminar = async () => {
@@ -285,6 +337,36 @@ export const Servicios = () => {
                 <X className="h-4 w-4 text-slate-400" />
               </button>
             </div>
+
+            {/* Tres acciones principales */}
+            {selected.estado !== 'completado' && selected.estado !== 'cancelado' && (
+              <div className="px-5 pt-4 pb-2 grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setModalContinuar(true)}
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors"
+                >
+                  <CalendarClock className="h-5 w-5" />
+                  <span className="text-[11px] font-semibold leading-tight text-center">Continuar después</span>
+                </button>
+                <button
+                  onClick={() => { setNuevoTecnicoId(selected.tecnicoId || ''); setModalTraslado(true); }}
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  <ArrowRightLeft className="h-5 w-5" />
+                  <span className="text-[11px] font-semibold leading-tight text-center">Traslado</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`¿Cancelar el servicio de "${selected.cliente?.nombre || 'este cliente'}"?`)) return;
+                    await handleCambiarEstado(selected.id, 'cancelado');
+                  }}
+                  className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
+                >
+                  <XCircle className="h-5 w-5" />
+                  <span className="text-[11px] font-semibold leading-tight text-center">Cancelar servicio</span>
+                </button>
+              </div>
+            )}
 
             <div className="p-5 space-y-3">
               {[
@@ -589,6 +671,105 @@ export const Servicios = () => {
                 Eliminar servicio
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Traslado */}
+      {modalTraslado && selected && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 space-y-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="h-5 w-5 text-blue-500" />
+                <h3 className="font-bold text-lg">Traslado de técnico</h3>
+              </div>
+              <button onClick={() => setModalTraslado(false)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Técnico actual</label>
+              <p className="text-sm text-slate-500 bg-slate-50 rounded-xl px-3 py-2">{selected.tecnico?.nombre || 'Sin asignar'}</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Nuevo técnico</label>
+              <select
+                value={nuevoTecnicoId}
+                onChange={e => setNuevoTecnicoId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+              >
+                <option value="">Seleccionar técnico...</option>
+                {tecnicos.filter(t => t.id !== selected.tecnicoId).map(t => (
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleTraslado}
+              disabled={saving || !nuevoTecnicoId}
+              className="w-full min-h-11 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold flex items-center justify-center gap-2 transition-colors"
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+              Confirmar traslado
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Continuar después */}
+      {modalContinuar && selected && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 space-y-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-amber-500" />
+                <h3 className="font-bold text-lg">Continuar después</h3>
+              </div>
+              <button onClick={() => setModalContinuar(false)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500">El servicio actual se cancela y se crea uno nuevo para la fecha indicada con el mismo técnico y cliente.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">Nueva fecha</label>
+                <input
+                  type="date"
+                  value={continuarFecha}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => setContinuarFecha(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-slate-700">Hora</label>
+                <input
+                  type="time"
+                  value={continuarHora}
+                  onChange={e => setContinuarHora(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Nota (opcional)</label>
+              <textarea
+                value={continuarNota}
+                onChange={e => setContinuarNota(e.target.value)}
+                placeholder="Ej: Cliente solicitó reprogramar..."
+                rows={2}
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+            </div>
+            <button
+              onClick={handleContinuarDespues}
+              disabled={saving || !continuarFecha || !continuarHora}
+              className="w-full min-h-11 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold flex items-center justify-center gap-2 transition-colors"
+            >
+              <CalendarClock className="h-4 w-4" />
+              Reprogramar servicio
+            </button>
           </div>
         </div>
       )}
