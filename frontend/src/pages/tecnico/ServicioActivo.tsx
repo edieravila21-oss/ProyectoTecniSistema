@@ -21,7 +21,7 @@ import type { Servicio, MetodoPago } from '@/types';
 import {
   Phone, MapPin, Camera, Check, CheckCircle, WifiOff,
   Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
-  User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle,
+  User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle, ImageIcon,
 } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import SignatureCanvas from 'react-signature-canvas';
@@ -303,11 +303,11 @@ export const ServicioActivo = () => {
     setPasoActual(4);
   };
 
-  const handleSubirFoto = (tipo: 'antes' | 'durante' | 'despues') => {
+  const handleSubirFoto = (tipo: 'antes' | 'durante' | 'despues', source: 'camera' | 'gallery' = 'camera') => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.capture = 'environment';
+    if (source === 'camera') input.capture = 'environment';
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file || !id) return;
@@ -697,10 +697,16 @@ export const ServicioActivo = () => {
                     ))}
                   </div>
                   {fotosAntes.length < maxAntes && (
-                    <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes')}>
-                      <Camera className="h-5 w-5 mr-2" />
-                      {uploadingTipos.has('antes') ? 'Subiendo foto...' : fotosAntes.length === 0 ? 'Tomar foto antes del servicio' : 'Tomar segunda foto antes'}
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes', 'camera')}>
+                        <Camera className="h-4 w-4 mr-2" />
+                        {uploadingTipos.has('antes') ? 'Subiendo...' : 'Tomar foto'}
+                      </Button>
+                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes', 'gallery')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Galería
+                      </Button>
+                    </div>
                   )}
                   {fotosAntes.length >= maxAntes && (
                     <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos antes completadas</p>
@@ -1388,10 +1394,16 @@ export const ServicioActivo = () => {
                     ))}
                   </div>
                   {fotosDurante.length < maxDurante && (
-                    <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('durante')}>
-                      <Camera className="h-4 w-4 mr-2" />
-                      {uploadingTipos.has('durante') ? 'Subiendo...' : fotosDurante.length === 0 ? 'Tomar foto durante el servicio' : 'Tomar segunda foto durante'}
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('durante', 'camera')}>
+                        <Camera className="h-4 w-4 mr-2" />
+                        {uploadingTipos.has('durante') ? 'Subiendo...' : 'Tomar foto'}
+                      </Button>
+                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('durante', 'gallery')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Galería
+                      </Button>
+                    </div>
                   )}
                   {fotosDurante.length >= maxDurante && (
                     <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos durante completadas</p>
@@ -1532,10 +1544,16 @@ export const ServicioActivo = () => {
                     ))}
                   </div>
                   {fotosDespues.length < maxDespues && (
-                    <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('despues')}>
-                      <Camera className="h-4 w-4 mr-2" />
-                      {uploadingTipos.has('despues') ? 'Subiendo...' : fotosDespues.length === 0 ? 'Tomar foto después del servicio' : 'Tomar segunda foto después'}
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('despues', 'camera')}>
+                        <Camera className="h-4 w-4 mr-2" />
+                        {uploadingTipos.has('despues') ? 'Subiendo...' : 'Tomar foto'}
+                      </Button>
+                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('despues', 'gallery')}>
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Galería
+                      </Button>
+                    </div>
                   )}
                   {fotosDespues.length >= maxDespues && (
                     <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos después completadas</p>
