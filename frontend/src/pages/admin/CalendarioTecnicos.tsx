@@ -75,7 +75,6 @@ const FESTIVOS = FESTIVOS_CO;
 
 const esFestivo = (dateStr: string) => FESTIVOS.has(dateStr);
 const esDomingo = (d: Date) => d.getDay() === 0;
-const esSabado = (d: Date) => d.getDay() === 6;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -619,9 +618,6 @@ export const CalendarioTecnicos = () => {
     const dCita = new Date(citaForm.fecha_programada + 'T00:00:00');
     if (esDomingo(dCita)) { toast.error('No se trabaja los domingos'); return; }
     if (esFestivo(citaForm.fecha_programada)) { toast.error('Día festivo — no se trabaja este día'); return; }
-    if (esSabado(dCita) && citaForm.hora_inicio >= '12:00') {
-      toast.error('Los sábados solo se atiende hasta las 12:00'); return;
-    }
     if (!citaForm.hora_inicio) { toast.error('Selecciona la hora'); return; }
     if (citaExtendida && (!citaAlmuerzoInicio || !citaAlmuerzoFin)) {
       toast.error('Completa los horarios de almuerzo'); return;
@@ -857,7 +853,6 @@ export const CalendarioTecnicos = () => {
   // ── Indicadores del día actual ───────────────────────────────────────────────
   const fechaStr = format(fecha, 'yyyy-MM-dd');
   const esFestivoHoy = esFestivo(fechaStr);
-  const esSabadoHoy = esSabado(fecha);
   const esDomingoHoy = esDomingo(fecha);
 
   // Cuántos eventos crearía la recurrencia actual (para mostrar en UI)
@@ -923,9 +918,6 @@ export const CalendarioTecnicos = () => {
               )}
               {esDomingoHoy && (
                 <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold align-middle">DOMINGO</span>
-              )}
-              {esSabadoHoy && (
-                <span className="ml-2 text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-bold align-middle">SAB · hasta 12:00</span>
               )}
             </div>
             <button onClick={() => setFecha(d => addDays(d, 1))} className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50">
@@ -1009,8 +1001,8 @@ export const CalendarioTecnicos = () => {
                   <div className="flex flex-1">
                     {HORAS.map(h => (
                       <div key={h} style={{ width: PX_POR_HORA }}
-                        className={`text-center py-2 border-l border-slate-100 shrink-0 ${esSabadoHoy && h >= 12 ? 'bg-slate-100/60' : ''}`}>
-                        <span className={`text-[10px] font-bold ${esSabadoHoy && h >= 12 ? 'text-slate-300' : 'text-slate-400'}`}>
+                        className="text-center py-2 border-l border-slate-100 shrink-0">
+                        <span className="text-[10px] font-bold text-slate-400">
                           {String(h).padStart(2, '0')}:00
                         </span>
                       </div>
@@ -1067,23 +1059,6 @@ export const CalendarioTecnicos = () => {
                         {HORAS.map(h => (
                           <div key={h} style={{ left: (h - HORA_INICIO) * PX_POR_HORA }} className="absolute top-0 bottom-0 w-px bg-slate-100" />
                         ))}
-
-                        {/* Overlay sábado: sin servicio después de 12:00 */}
-                        {esSabadoHoy && (
-                          <div
-                            style={{
-                              left: (12 - HORA_INICIO) * PX_POR_HORA,
-                              width: (HORA_INICIO + HORAS.length - 12) * PX_POR_HORA,
-                            }}
-                            className="absolute top-0 bottom-0 bg-slate-100/80 border-l-2 border-dashed border-slate-300 z-10 pointer-events-none"
-                          >
-                            {idx === 0 && (
-                              <span className="absolute top-1 left-1 text-[8px] text-slate-400 font-bold whitespace-nowrap select-none">
-                                Sin servicio
-                              </span>
-                            )}
-                          </div>
-                        )}
 
                         {/* Indicador hora actual */}
                         {esHoy && nowH >= HORA_INICIO && nowH <= HORA_INICIO + HORAS.length && (
@@ -1936,13 +1911,6 @@ export const CalendarioTecnicos = () => {
                           Bloque 2: {citaAlmuerzoFin} – {citaForm.hora_fin}
                         </span>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Aviso sábado */}
-                  {citaForm.fecha_programada && esSabado(new Date(citaForm.fecha_programada + 'T00:00:00')) && (
-                    <div className="text-xs text-blue-600 bg-blue-50 rounded-xl px-3 py-2 border border-blue-200">
-                      Sábado — atención solo hasta las 12:00
                     </div>
                   )}
 
