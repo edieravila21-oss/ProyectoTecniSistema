@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { getServicios, cambiarEstadoServicio, crearServicio } from '@/api/servicios';
+import { getServicios, getServicio, cambiarEstadoServicio, crearServicio } from '@/api/servicios';
+import { cacheServicio } from '@/lib/offlineDb';
 import { getClientes } from '@/api/clientes';
 import { useAuthStore } from '@/store/authStore';
 import { useSocketStore } from '@/store/socketStore';
@@ -12,7 +13,7 @@ import {
   Phone, MapPin, Navigation, Wrench, Search, Star,
   CheckCircle2, ArrowRight, TrendingUp,
   Calendar, Snowflake, MessageSquare,
-  Plus, ChevronRight, ClipboardList,
+  Plus, ChevronRight, ClipboardList, Download, Loader2,
 } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -73,6 +74,31 @@ export const AgendaTecnico = () => {
 
   const [accionandoId, setAccionandoId] = useState<string | null>(null);
   const [creandoTest, setCreandoTest] = useState(false);
+  const [descargando, setDescargando] = useState(false);
+  const [descargaProgreso, setDescargaProgreso] = useState<{ done: number; total: number } | null>(null);
+
+  const handleDescargarAgenda = async () => {
+    const activos = servicios.filter(s => !['cancelado', 'completado'].includes(s.estado));
+    if (activos.length === 0) { toast.error('No hay servicios activos para descargar'); return; }
+    setDescargando(true);
+    setDescargaProgreso({ done: 0, total: activos.length });
+    let ok = 0;
+    for (let i = 0; i < activos.length; i++) {
+      try {
+        const { data: res } = await getServicio(activos[i].id);
+        await cacheServicio(res.data);
+        // Pre-load photos so the Service Worker caches them
+        for (const foto of res.data.fotos || []) {
+          if (foto.url) new Image().src = foto.url;
+        }
+        ok++;
+      } catch {}
+      setDescargaProgreso({ done: i + 1, total: activos.length });
+    }
+    setDescargando(false);
+    setDescargaProgreso(null);
+    toast.success(`Agenda lista sin internet — ${ok} servicio${ok !== 1 ? 's' : ''} descargado${ok !== 1 ? 's' : ''}`);
+  };
 
   const crearServicioTest = async () => {
     setCreandoTest(true);
@@ -168,6 +194,17 @@ export const AgendaTecnico = () => {
           </div>
           <div className="flex items-center gap-2.5">
             <button
+              onClick={handleDescargarAgenda}
+              disabled={descargando || loading}
+              title="Descargar agenda para usar sin internet"
+              className="h-10 w-10 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center hover:bg-white/25 transition-colors disabled:opacity-60"
+            >
+              {descargando
+                ? <Loader2 className="h-4 w-4 text-white animate-spin" />
+                : <Download className="h-4 w-4 text-white" />
+              }
+            </button>
+            <button
               onClick={openSearch}
               className="h-10 w-10 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center hover:bg-white/25 transition-colors"
             >
@@ -214,6 +251,22 @@ export const AgendaTecnico = () => {
             </div>
           </div>
         </div>
+
+        {/* Barra de progreso de descarga */}
+        {descargaProgreso && (
+          <div className="mt-3 bg-white/15 backdrop-blur-sm rounded-xl px-3 py-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] text-white font-medium">Descargando agenda...</span>
+              <span className="text-[10px] text-blue-200">{descargaProgreso.done}/{descargaProgreso.total}</span>
+            </div>
+            <div className="w-full bg-white/20 rounded-full h-1.5">
+              <div
+                className="bg-white h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${(descargaProgreso.done / descargaProgreso.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="px-4 mt-3 space-y-3 pb-4">
