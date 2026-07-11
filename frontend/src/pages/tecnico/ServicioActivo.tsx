@@ -97,6 +97,7 @@ export const ServicioActivo = () => {
   const [notaPausa, setNotaPausa] = useState('');
   const [fechaReanudacion, setFechaReanudacion] = useState('');
   const [horaReanudacion, setHoraReanudacion] = useState('');
+  const [activeDiagItem, setActiveDiagItem] = useState<string | null>(null);
 
   const fetchServicio = async () => {
     if (!id) return;
@@ -931,55 +932,119 @@ export const ServicioActivo = () => {
       )}
 
       {/* PASO 2 — DIAGNÓSTICO */}
-      {pasoActual === 2 && (
-        <Card className="relative">
-          <button onClick={() => setPasoActual(1)} className="absolute top-3 left-3 h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors z-10">
-            <ArrowLeft className="h-4 w-4 text-slate-600" />
-          </button>
-          <CardContent className="p-4 pt-3 space-y-4">
-            <h2 className="font-bold text-lg text-center">Diagnóstico</h2>
+      {pasoActual === 2 && (() => {
+        const chipsPorItem: Record<string, string[]> = {
+          voltaje: ['Bajo', 'Alto', 'Inestable', 'Sin voltaje'],
+          amperaje: ['Bajo', 'Alto', 'Inestable', 'Pico anormal'],
+          gas: ['Bajo nivel', 'Vacío', 'Fuga detectada', 'Requiere recarga'],
+          refrigerante: ['Bajo nivel', 'Vacío', 'Fuga detectada', 'Requiere recarga'],
+          compresor: ['Ruido anormal', 'No arranca', 'Sobrecalentado', 'Trabado'],
+          filtro: ['Sucios', 'Obstruidos', 'Rotos', 'Requieren cambio'],
+          condensador: ['Sucio', 'Aletas dobladas', 'Ventilador no gira', 'Sobrecalentado'],
+          evaporador: ['Congelado', 'Sucio', 'Fuga detectada', 'No enfría'],
+          termostato: ['No regula', 'Descalibrado', 'No responde', 'Dañado'],
+          ventilador: ['No gira', 'Ruido anormal', 'Gira lento', 'Aspas dañadas'],
+          resistencia: ['No calienta', 'Quemada', 'Intermitente'],
+          deshielo: ['No calienta', 'Quemada', 'Intermitente'],
+          sello: ['Desgastado', 'Roto', 'No sella bien'],
+          tarjeta: ['Quemada', 'Corto circuito', 'Error en display', 'No responde'],
+          temperatura: ['No enfría', 'Enfría poco', 'Congela en exceso', 'Inestable'],
+          control: ['No responde', 'Pilas agotadas', 'Botones dañados'],
+          drenaje: ['Obstruido', 'Gotea', 'Bandeja llena', 'Tubería rota'],
+          condensado: ['Obstruido', 'Gotea', 'Bandeja llena', 'Tubería rota'],
+        };
+        const getChips = (desc: string): string[] => {
+          const d = desc.toLowerCase();
+          for (const [key, chips] of Object.entries(chipsPorItem)) {
+            if (d.includes(key)) return chips;
+          }
+          return ['Desgaste', 'Dañado', 'Requiere cambio', 'Ruido anormal'];
+        };
+        return (
+          <Card className="relative">
+            <button onClick={() => setPasoActual(1)} className="absolute top-3 left-3 h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors z-10">
+              <ArrowLeft className="h-4 w-4 text-slate-600" />
+            </button>
+            <CardContent className="p-4 pt-3 space-y-4">
+              <h2 className="font-bold text-lg text-center">Diagnóstico</h2>
 
-            {renderFotos('durante', 'Fotos del diagnóstico')}
+              {renderFotos('durante', 'Fotos del diagnóstico')}
 
-            {itemsPorCat('diagnostico').length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-700">Verificación</p>
-                {itemsPorCat('diagnostico').map(item => (
-                  <button
-                    key={item.id}
-                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 transition-colors ${
-                      item.completado ? 'bg-green-50 border-green-200' : 'hover:bg-slate-50'
-                    }`}
-                    onClick={() => !item.completado && handleChecklistItem(item.id)}
-                    disabled={item.completado}
-                  >
-                    <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                    <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
-                      {item.descripcion}
-                    </span>
-                  </button>
-                ))}
+              {itemsPorCat('diagnostico').length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-slate-700">Verificación — toca cada ítem para ver las opciones</p>
+                  {itemsPorCat('diagnostico').map(item => {
+                    const isExpanded = activeDiagItem === item.id;
+                    const chips = getChips(item.descripcion);
+                    return (
+                      <div key={item.id} className={`rounded-xl border overflow-hidden transition-colors ${
+                        item.completado ? 'bg-green-50 border-green-200' :
+                        isExpanded ? 'border-blue-300 ring-1 ring-blue-200' : 'bg-white border-slate-200'
+                      }`}>
+                        <button
+                          className="flex items-center gap-3 w-full p-3 text-left min-h-12"
+                          onClick={() => !item.completado && setActiveDiagItem(isExpanded ? null : item.id)}
+                          disabled={item.completado}
+                        >
+                          <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
+                          <span className={`text-sm font-medium flex-1 ${item.completado ? 'line-through text-green-700/70' : 'text-slate-700'}`}>
+                            {item.descripcion}
+                          </span>
+                          {!item.completado && (
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase shrink-0 transition-colors ${
+                              isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {isExpanded ? 'cerrar' : 'revisar'}
+                            </span>
+                          )}
+                        </button>
+
+                        {isExpanded && !item.completado && (
+                          <div className="border-t border-slate-100 bg-slate-50 p-3">
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold border bg-green-50 border-green-300 text-green-700 hover:bg-green-100 transition-colors"
+                                onClick={() => { handleChecklistItem(item.id); setActiveDiagItem(null); }}
+                              >
+                                ✓ Normal
+                              </button>
+                              {chips.map(chip => (
+                                <button
+                                  key={chip}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-medium border bg-white border-slate-200 text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                  onClick={() => { handleChecklistItem(item.id); setActiveDiagItem(null); }}
+                                >
+                                  {chip}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Observaciones del diagnóstico</label>
+                <Textarea
+                  placeholder="Describe el problema encontrado, mediciones, estado del equipo..."
+                  value={observacionesDiag}
+                  onChange={e => setObservacionesDiag(e.target.value)}
+                  rows={4}
+                  className="bg-slate-50 border-slate-200"
+                />
               </div>
-            )}
 
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Observaciones del diagnóstico</label>
-              <Textarea
-                placeholder="Describe el problema encontrado, mediciones, estado del equipo..."
-                value={observacionesDiag}
-                onChange={e => setObservacionesDiag(e.target.value)}
-                rows={4}
-                className="bg-slate-50 border-slate-200"
-              />
-            </div>
-
-            <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}
-              disabled={!itemsPorCat('diagnostico').every(i => i.completado)}>
-              Continuar a cotización <ArrowRight className="h-4 w-4 ml-1" />
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+              <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}
+                disabled={!itemsPorCat('diagnostico').every(i => i.completado)}>
+                Continuar a cotización <ArrowRight className="h-4 w-4 ml-1" />
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* PASO 3 — COTIZACIÓN */}
       {pasoActual === 3 && (
