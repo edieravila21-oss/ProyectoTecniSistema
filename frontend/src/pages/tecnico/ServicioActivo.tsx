@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   getServicio, cambiarEstadoServicio, marcarChecklistItem,
-  subirFoto, eliminarFoto, guardarFirma, agregarNota, actualizarServicio,
+  subirFoto, eliminarFoto, guardarFirma, actualizarServicio,
   getHistorialEquipo, corregirEquipo, registrarEquipo,
 } from '@/api/servicios';
 import { cacheServicio, getCachedServicio, enqueueChecklist, enqueueFoto } from '@/lib/offlineDb';
@@ -20,10 +20,10 @@ import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
 import type { Servicio, MetodoPago } from '@/types';
 import {
   Phone, MapPin, Camera, Check, CheckCircle, WifiOff,
-  Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History, AlertTriangle,
+  Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History,
   User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle, ImageIcon,
 } from 'lucide-react';
-import { format, addDays } from 'date-fns';
+import { format } from 'date-fns';
 import SignatureCanvas from 'react-signature-canvas';
 
 interface HistorialCliente {
@@ -32,8 +32,7 @@ interface HistorialCliente {
   proximo_recordatorio?: { fecha_proximo_recordatorio: string };
 }
 
-const pasos = ['En camino', 'Llegada', 'Diagnóstico', 'Reparación', 'Cierre'];
-
+const pasos = ['En camino', 'Llegada', 'Diagnóstico', 'Cotización', 'Reparación', 'Cierre'];
 
 const repuestosComunes: Record<string, { nombre: string; precio: number }[]> = {
   aire_acondicionado: [
@@ -79,22 +78,18 @@ export const ServicioActivo = () => {
   const [uploadingTipos, setUploadingTipos] = useState<Set<string>>(new Set());
   const [deletingFotos, setDeletingFotos] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [notasTecnico, setNotasTecnico] = useState('');
+  const [observacionesDiag, setObservacionesDiag] = useState('');
+  const [observacionesRep, setObservacionesRep] = useState('');
+  const [costoServicio, setCostoServicio] = useState('');
   const [valorFinal, setValorFinal] = useState('');
   const [metodoPago, setMetodoPago] = useState('efectivo');
-  const [descripcionTrabajo, setDescripcionTrabajo] = useState('');
   const [showExito, setShowExito] = useState(false);
   const sigRef = useRef<SignatureCanvas>(null);
   const [firmada, setFirmada] = useState(false);
   const [historialEquipo, setHistorialEquipo] = useState<Servicio[]>([]);
   const [historialTotal, setHistorialTotal] = useState(0);
   const [clienteHistorial, setClienteHistorial] = useState<HistorialCliente | null>(null);
-  const [activeDiagItem, setActiveDiagItem] = useState<string | null>(null);
-  const [diagEstado, setDiagEstado] = useState<'observacion' | 'falla' | null>(null);
-  const [diagValue, setDiagValue] = useState('');
   const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', capacidad: '', tecnologia: '', tipo: '' });
-  const [fallaConfirmada, setFallaConfirmada] = useState<boolean | null>(null);
-  const [diagnosticoFinal, setDiagnosticoFinal] = useState('');
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
   const [showCustomRepuesto, setShowCustomRepuesto] = useState(false);
   const [customRepuestoNombre, setCustomRepuestoNombre] = useState('');
@@ -128,7 +123,6 @@ export const ServicioActivo = () => {
 
     setServicio(data);
 
-    // Solo calcula el paso en la carga inicial — no en refreshes posteriores
     if (!initialLoadDone.current) {
       initialLoadDone.current = true;
       if (data.estado === 'asignado' || data.estado === 'en_camino' || data.estado === 'pausado') setPasoActual(0);
@@ -137,16 +131,13 @@ export const ServicioActivo = () => {
         const llegada = cl.filter(c => c.categoria === 'llegada');
         const diag = cl.filter(c => c.categoria === 'diagnostico');
         const rep = cl.filter(c => c.categoria === 'reparacion');
-        if (rep.every(c => c.completado)) setPasoActual(4);
-        else if (diag.every(c => c.completado)) setPasoActual(3);
+        if (rep.every(c => c.completado)) setPasoActual(5);
+        else if (diag.every(c => c.completado)) setPasoActual(4);
         else if (llegada.every(c => c.completado)) setPasoActual(2);
         else setPasoActual(1);
       }
     }
     if (data.valor_final) setValorFinal(String(data.valor_final));
-    if (data.notas_tecnico) setDescripcionTrabajo(data.notas_tecnico);
-    if (data.falla_confirmada !== undefined && data.falla_confirmada !== null) setFallaConfirmada(data.falla_confirmada);
-    if (data.diagnostico_final) setDiagnosticoFinal(data.diagnostico_final);
     if (data.repuestos) setRepuestos(data.repuestos);
     setLoading(false);
   };
@@ -154,7 +145,6 @@ export const ServicioActivo = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(() => { fetchServicio(); }, [id]);
 
-  // When internet comes back: sync queued actions then refresh
   useEffect(() => {
     const handleOnline = async () => {
       toast.success('Conexión restaurada — sincronizando...');
@@ -204,7 +194,6 @@ export const ServicioActivo = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicio?.equipoId, servicio?.clienteId]);
 
-
   const handleCambiarEstado = async (estado: string) => {
     if (!id) return;
     setSaving(true);
@@ -238,8 +227,8 @@ export const ServicioActivo = () => {
       const llegada = cl.filter(c => c.categoria === 'llegada');
       const diag = cl.filter(c => c.categoria === 'diagnostico');
       const rep = cl.filter(c => c.categoria === 'reparacion');
-      if (rep.every(c => c.completado)) setPasoActual(4);
-      else if (diag.every(c => c.completado)) setPasoActual(3);
+      if (rep.every(c => c.completado)) setPasoActual(5);
+      else if (diag.every(c => c.completado)) setPasoActual(4);
       else if (llegada.every(c => c.completado)) setPasoActual(2);
       else setPasoActual(1);
       fetchServicio();
@@ -251,7 +240,6 @@ export const ServicioActivo = () => {
     if (!id) return;
 
     if (!navigator.onLine) {
-      // Optimistic update + enqueue for later sync
       setServicio(prev => prev ? {
         ...prev,
         checklist: (prev.checklist || []).map(c => c.id === itemId ? { ...c, completado: true } : c),
@@ -266,16 +254,6 @@ export const ServicioActivo = () => {
     } catch { toast.error('Error actualizando checklist'); }
   };
 
-  const autoCheckCierreItem = async (keyword: string) => {
-    if (!servicio) return;
-    const item = (servicio.checklist || []).find(
-      c => c.categoria === 'cierre' && !c.completado && c.descripcion.toLowerCase().includes(keyword)
-    );
-    if (item && id) {
-      try { await marcarChecklistItem(id, item.id); } catch { /* best-effort */ }
-    }
-  };
-
   const autoCheckLlegadaItem = async (keyword: string) => {
     if (!servicio) return;
     const item = (servicio.checklist || []).find(
@@ -286,21 +264,23 @@ export const ServicioActivo = () => {
     }
   };
 
-  const autoCheckReparacionItem = async (keyword: string) => {
-    if (!servicio) return;
-    const item = (servicio.checklist || []).find(
-      c => c.categoria === 'reparacion' && !c.completado && c.descripcion.toLowerCase().includes(keyword)
-    );
-    if (item && id) {
-      try { await marcarChecklistItem(id, item.id); } catch { /* best-effort */ }
-    }
-  };
-
-  const handleAvanzarACierre = async () => {
-    if (id && repuestos.length > 0) {
-      try { await actualizarServicio(id, { repuestos }); } catch { /* best-effort save */ }
-    }
-    setPasoActual(4);
+  const handleClienteAcepta = async () => {
+    if (!id) return;
+    const subtotalRepuestos = repuestos.reduce((sum, r) => sum + r.cantidad * r.precio_unitario, 0);
+    const costoServ = parseFloat(costoServicio) || 0;
+    const total = subtotalRepuestos + costoServ;
+    setSaving(true);
+    try {
+      await actualizarServicio(id, {
+        repuestos,
+        valor_final: total || undefined,
+        metodo_pago: metodoPago as MetodoPago,
+      });
+      if (total) setValorFinal(String(total));
+      toast.success('Cotización aceptada — procedemos con la reparación');
+      setPasoActual(4);
+    } catch { toast.error('Error guardando cotización'); }
+    finally { setSaving(false); }
   };
 
   const handleSubirFoto = (tipo: 'antes' | 'durante' | 'despues', source: 'camera' | 'gallery' = 'camera') => {
@@ -313,7 +293,6 @@ export const ServicioActivo = () => {
       if (!file || !id) return;
 
       if (!navigator.onLine) {
-        // Store locally — show immediately, upload when back online
         const localUrl = URL.createObjectURL(file);
         const fakeId = `local-${Date.now()}`;
         setServicio(prev => prev ? {
@@ -325,7 +304,6 @@ export const ServicioActivo = () => {
         return;
       }
 
-      // Online: upload in background as before
       setUploadingTipos(prev => new Set(prev).add(tipo));
       toast.success('📷 Foto tomada, subiendo en segundo plano...');
 
@@ -335,7 +313,6 @@ export const ServicioActivo = () => {
         formData.append('tipo', tipo);
         await subirFoto(id, formData);
         if (tipo === 'antes') await autoCheckLlegadaItem('foto');
-        if (tipo === 'despues') await autoCheckCierreItem('foto');
         fetchServicio();
       } catch { toast.error('Error subiendo foto, intenta de nuevo'); }
       finally { setUploadingTipos(prev => { const s = new Set(prev); s.delete(tipo); return s; }); }
@@ -346,7 +323,6 @@ export const ServicioActivo = () => {
   const handleEliminarFoto = async (fotoId: string) => {
     if (!id) return;
 
-    // Local-only photos (taken offline) — just remove from state
     if (fotoId.startsWith('local-')) {
       setServicio(prev => prev ? { ...prev, fotos: (prev.fotos || []).filter(f => f.id !== fotoId) } : prev);
       toast.success('Foto local eliminada');
@@ -386,52 +362,24 @@ export const ServicioActivo = () => {
       await guardarFirma(id, base64);
       setFirmada(true);
       toast.success('Firma guardada');
-      await autoCheckCierreItem('firma');
       fetchServicio();
     } catch { toast.error('Error guardando firma'); }
   };
 
-  useEffect(() => {
-    if (!servicio || !valorFinal || !metodoPago) return;
-    const item = (servicio.checklist || []).find(
-      c => c.categoria === 'cierre' && !c.completado && c.descripcion.toLowerCase().includes('valor')
-    );
-    if (item && id) {
-      marcarChecklistItem(id, item.id).then(() => fetchServicio()).catch(() => {});
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [valorFinal, metodoPago]);
-
   const handleCerrarServicio = async () => {
     if (!id || !servicio) return;
-
-    const fotoAntes = servicio.fotos?.some(f => f.tipo === 'antes');
-    const fotoDespues = servicio.fotos?.some(f => f.tipo === 'despues');
-
-    if (!fotoAntes) { toast.error('Falta foto "antes" del equipo'); return; }
-    if (!fotoDespues) { toast.error('Falta al menos una foto "después"'); return; }
     if (!firmada && !servicio.firma) { toast.error('Falta la firma del cliente'); return; }
-    if (!valorFinal) { toast.error('Ingresa el valor cobrado'); return; }
-    if (!descripcionTrabajo) { toast.error('Describe el trabajo realizado'); return; }
-    if (fallaConfirmada === null) { toast.error('Confirma si la falla fue la reportada'); return; }
-    if (fallaConfirmada === false && !diagnosticoFinal) { toast.error('Selecciona el diagnóstico real'); return; }
 
     setSaving(true);
     try {
       if (!firmada && sigRef.current && !sigRef.current.isEmpty()) {
         await handleGuardarFirma();
       }
-      await agregarNota(id, descripcionTrabajo);
-
-      await actualizarServicio(id, {
-        valor_final: parseFloat(valorFinal),
-        metodo_pago: metodoPago as MetodoPago,
-        notas_tecnico: descripcionTrabajo,
-        falla_confirmada: fallaConfirmada ?? undefined,
-        diagnostico_final: fallaConfirmada ? servicio.descripcion_falla || '' : diagnosticoFinal,
-        repuestos: repuestos.length > 0 ? repuestos : undefined,
-      });
-
+      const notas = [
+        observacionesDiag && `Diagnóstico:\n${observacionesDiag}`,
+        observacionesRep && `Reparación:\n${observacionesRep}`,
+      ].filter(Boolean).join('\n\n');
+      if (notas) await actualizarServicio(id, { notas_tecnico: notas });
       await cambiarEstadoServicio(id, 'completado');
       setShowExito(true);
       setTimeout(() => navigate('/tecnico/agenda'), 3000);
@@ -456,6 +404,49 @@ export const ServicioActivo = () => {
   const checklist = servicio.checklist || [];
   const itemsPorCat = (cat: string) => checklist.filter(c => c.categoria === cat);
 
+  const renderFotos = (tipo: 'antes' | 'durante' | 'despues', label: string) => {
+    const fotos = servicio.fotos?.filter(f => f.tipo === tipo) || [];
+    const max = 4;
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-medium">{label}</p>
+          <span className={`text-xs font-medium ${fotos.length >= max ? 'text-emerald-600' : 'text-slate-500'}`}>{fotos.length}/{max}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          {fotos.map(f => (
+            <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
+              <img src={f.url} alt={label} className="w-full h-full object-cover rounded-xl" />
+              <div className="absolute bottom-1 right-1 flex gap-1">
+                <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
+                  <Download className="h-3.5 w-3.5 text-white" />
+                </button>
+                <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
+                  <Trash2 className="h-3.5 w-3.5 text-white" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {fotos.length < max && (
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto(tipo, 'camera')}>
+              <Camera className="h-4 w-4 mr-2" />
+              {uploadingTipos.has(tipo) ? 'Subiendo...' : 'Tomar foto'}
+            </Button>
+            <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto(tipo, 'gallery')}>
+              <ImageIcon className="h-4 w-4 mr-2" />
+              Galería
+            </Button>
+          </div>
+        )}
+        {fotos.length >= max && (
+          <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos completadas</p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4 max-w-lg mx-auto pb-8">
       {/* Offline banner */}
@@ -470,16 +461,14 @@ export const ServicioActivo = () => {
         {pasos.map((p, i) => (
           <div key={p} className="flex-1">
             <div className={`h-1.5 rounded-full transition-colors ${i <= pasoActual ? 'bg-primary' : 'bg-gray-200'}`} />
-            <p className={`text-[10px] mt-1 text-center ${i <= pasoActual ? 'text-primary font-medium' : 'text-muted-foreground'}`}>{p}</p>
+            <p className={`text-[9px] mt-1 text-center ${i <= pasoActual ? 'text-primary font-medium' : 'text-muted-foreground'}`}>{p}</p>
           </div>
         ))}
       </div>
 
-
       {/* PASO 0 — EN CAMINO */}
       {pasoActual === 0 && (
         <>
-          {/* Service info */}
           <Card>
             <CardContent className="p-4 space-y-4">
               <h2 className="font-bold text-lg">Información del servicio</h2>
@@ -671,51 +660,9 @@ export const ServicioActivo = () => {
           <CardContent className="p-4 pt-3 space-y-4">
             <h2 className="font-bold text-lg text-center">Llegada</h2>
 
-            {/* Fotos ANTES — máx 2 */}
-            {(() => {
-              const fotosAntes = servicio.fotos?.filter(f => f.tipo === 'antes') || [];
-              const maxAntes = 2;
-              return (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">Fotos del equipo ANTES <span className="text-slate-400 font-normal">(obligatorias)</span></p>
-                    <span className={`text-xs font-medium ${fotosAntes.length >= maxAntes ? 'text-emerald-600' : 'text-slate-500'}`}>{fotosAntes.length}/{maxAntes}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    {fotosAntes.map(f => (
-                      <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
-                        <img src={f.url} alt="Antes" className="w-full h-full object-cover rounded-xl" />
-                        <div className="absolute bottom-1 right-1 flex gap-1">
-                          <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
-                            <Download className="h-3.5 w-3.5 text-white" />
-                          </button>
-                          <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
-                            <Trash2 className="h-3.5 w-3.5 text-white" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {fotosAntes.length < maxAntes && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes', 'camera')}>
-                        <Camera className="h-4 w-4 mr-2" />
-                        {uploadingTipos.has('antes') ? 'Subiendo...' : 'Tomar foto'}
-                      </Button>
-                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('antes', 'gallery')}>
-                        <ImageIcon className="h-4 w-4 mr-2" />
-                        Galería
-                      </Button>
-                    </div>
-                  )}
-                  {fotosAntes.length >= maxAntes && (
-                    <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos antes completadas</p>
-                  )}
-                </div>
-              );
-            })()}
+            {renderFotos('antes', 'Fotos del equipo ANTES')}
 
-            {/* Checklist de llegada con contexto */}
+            {/* Checklist de llegada */}
             <div className="space-y-2">
               {(() => {
                 const tieneFotoAntes = servicio.fotos?.some(f => f.tipo === 'antes');
@@ -723,8 +670,6 @@ export const ServicioActivo = () => {
                   const desc = item.descripcion.toLowerCase();
                   const isFotoItem = desc.includes('foto');
                   const isEquipoItem = desc.includes('modelo') || desc.includes('serial') || desc.includes('btu') || desc.includes('verificar datos') || desc.includes('datos del equipo') || desc.includes('confirmar datos');
-
-                  // Items 2 y 3 bloqueados hasta que exista foto 'antes'
                   const bloqueadoSinFoto = !isFotoItem && !tieneFotoAntes && !item.completado;
                   const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado);
 
@@ -741,15 +686,12 @@ export const ServicioActivo = () => {
                         <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : ''}`}>
                           {item.descripcion}
                         </span>
-                        {/* Foto item: indicar que es automático */}
                         {isFotoItem && !item.completado && (
                           <p className="text-[11px] text-slate-400 mt-0.5">📷 Se confirma automáticamente al tomar la foto</p>
                         )}
-                        {/* Items bloqueados: mostrar por qué están bloqueados */}
                         {bloqueadoSinFoto && (
                           <p className="text-[11px] text-slate-400 mt-0.5">🔒 Primero toma la foto del equipo</p>
                         )}
-                        {/* Sin equipo vinculado: formulario para registrar el equipo */}
                         {isEquipoItem && tieneFotoAntes && !servicio.equipo && !item.completado && (
                           <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                             <p className="text-xs font-semibold text-blue-700">Registra los datos del equipo:</p>
@@ -816,7 +758,7 @@ export const ServicioActivo = () => {
                                   className="h-8 text-xs bg-white"
                                 />
                               )}
-                              {(correccionData.tipo === 'aire_acondicionado') && (
+                              {correccionData.tipo === 'aire_acondicionado' && (
                                 <>
                                   <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
                                   <select
@@ -867,7 +809,6 @@ export const ServicioActivo = () => {
                             </Button>
                           </div>
                         )}
-                        {/* Equipo item: formulario de verificación/complemento */}
                         {isEquipoItem && tieneFotoAntes && servicio.equipo && !item.completado && (
                           <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                             <p className="text-xs font-semibold text-blue-700">Verifica y completa los datos del equipo:</p>
@@ -954,16 +895,10 @@ export const ServicioActivo = () => {
                               onClick={async () => {
                                 if (!id) return;
                                 const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra.trim() : correccionData.marca;
-                                if (!marca) {
-                                  toast.error('Selecciona la marca del equipo');
-                                  return;
-                                }
+                                if (!marca) { toast.error('Selecciona la marca del equipo'); return; }
                                 const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
                                 try {
-                                  await corregirEquipo(id, {
-                                    marca,
-                                    capacidad: capacidad || undefined,
-                                  });
+                                  await corregirEquipo(id, { marca, capacidad: capacidad || undefined });
                                   toast.success('Datos del equipo confirmados');
                                   await handleChecklistItem(item.id);
                                   fetchServicio();
@@ -1003,197 +938,63 @@ export const ServicioActivo = () => {
           </button>
           <CardContent className="p-4 pt-3 space-y-4">
             <h2 className="font-bold text-lg text-center">Diagnóstico</h2>
-            <div className="bg-muted p-2 rounded-lg">
-              <div className="flex items-center justify-between text-sm">
-                <span>Progreso</span>
-                <span className="font-medium">{itemsPorCat('diagnostico').filter(c => c.completado).length}/{itemsPorCat('diagnostico').length}</span>
+
+            {renderFotos('durante', 'Fotos del diagnóstico')}
+
+            {itemsPorCat('diagnostico').length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-700">Verificación</p>
+                {itemsPorCat('diagnostico').map(item => (
+                  <button
+                    key={item.id}
+                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 transition-colors ${
+                      item.completado ? 'bg-green-50 border-green-200' : 'hover:bg-slate-50'
+                    }`}
+                    onClick={() => !item.completado && handleChecklistItem(item.id)}
+                    disabled={item.completado}
+                  >
+                    <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
+                    <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
+                      {item.descripcion}
+                    </span>
+                  </button>
+                ))}
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${(itemsPorCat('diagnostico').filter(c => c.completado).length / Math.max(1, itemsPorCat('diagnostico').length)) * 100}%` }} />
-              </div>
-            </div>
-            <div className="space-y-3">
-              {(() => {
-                const chipsPorItem: Record<string, string[]> = {
-                  voltaje: ['Bajo', 'Alto', 'Inestable', 'Sin voltaje'],
-                  amperaje: ['Bajo', 'Alto', 'Inestable', 'Pico anormal'],
-                  gas: ['Bajo', 'Vacío', 'Fuga detectada', 'Requiere recarga'],
-                  refrigerante: ['Bajo', 'Vacío', 'Fuga detectada', 'Requiere recarga'],
-                  compresor: ['Ruido anormal', 'No arranca', 'Sobrecalentado', 'Trabado', 'Fuga'],
-                  filtro: ['Sucios', 'Obstruidos', 'Rotos', 'Requieren cambio'],
-                  condensador: ['Sucio', 'Aletas dobladas', 'Ventilador no gira', 'Sobrecalentado'],
-                  evaporador: ['Congelado', 'Sucio', 'Fuga detectada', 'No enfría'],
-                  termostato: ['No regula', 'Descalibrado', 'No responde', 'Dañado'],
-                  ventilador: ['No gira', 'Ruido anormal', 'Gira lento', 'Aspas dañadas'],
-                  resistencia: ['No calienta', 'Quemada', 'Intermitente'],
-                  deshielo: ['No calienta', 'Quemada', 'Intermitente'],
-                  sello: ['Desgastado', 'Roto', 'No sella bien', 'Sucio'],
-                  tarjeta: ['Quemada', 'Corto circuito', 'Error en display', 'No responde'],
-                  temperatura: ['No enfría', 'Enfría poco', 'Congela en exceso', 'Inestable'],
-                  control: ['No responde', 'Pilas agotadas', 'Botones dañados'],
-                  drenaje: ['Obstruido', 'Gotea', 'Bandeja llena', 'Tubería rota'],
-                  condensado: ['Obstruido', 'Gotea', 'Bandeja llena', 'Tubería rota'],
-                };
+            )}
 
-                const getChips = (desc: string): string[] => {
-                  const d = desc.toLowerCase();
-                  for (const [key, chips] of Object.entries(chipsPorItem)) {
-                    if (d.includes(key)) return chips;
-                  }
-                  return ['Desgaste', 'Dañado', 'Requiere cambio', 'Ruido anormal'];
-                };
-
-                return itemsPorCat('diagnostico').map(item => {
-                  const isExpanded = activeDiagItem === item.id;
-                  const chips = getChips(item.descripcion);
-
-                  const completarItem = (estado: string, detalle?: string) => {
-                    handleChecklistItem(item.id);
-                    const linea = detalle
-                      ? `${item.descripcion}: ${estado.toUpperCase()} — ${detalle}`
-                      : `${item.descripcion}: ${estado}`;
-                    setNotasTecnico(prev => prev ? `${prev}\n- ${linea}` : `- ${linea}`);
-                    setActiveDiagItem(null);
-                    setDiagEstado(null);
-                    setDiagValue('');
-                  };
-
-                  return (
-                    <div key={item.id} className={`rounded-xl border overflow-hidden transition-colors ${
-                      item.completado ? 'bg-green-50 border-green-200' :
-                      isExpanded ? 'border-blue-300 ring-1 ring-blue-300' : 'bg-white'
-                    }`}>
-                      <button
-                        className="flex items-center gap-3 w-full p-3 text-left min-h-12"
-                        onClick={() => {
-                          if (!item.completado) {
-                            setActiveDiagItem(isExpanded ? null : item.id);
-                            setDiagEstado(null);
-                            setDiagValue('');
-                          }
-                        }}
-                        disabled={item.completado}
-                      >
-                        <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                        <span className={`text-sm font-medium flex-1 ${item.completado ? 'line-through text-green-700/70' : 'text-slate-700'}`}>
-                          {item.descripcion}
-                        </span>
-                        {!item.completado && !isExpanded && (
-                          <span className="ml-auto text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-full uppercase tracking-wider shrink-0">Revisar</span>
-                        )}
-                      </button>
-
-                      {isExpanded && !item.completado && (
-                        <div className="border-t border-slate-100">
-                          {/* Paso 1: Seleccionar estado */}
-                          <div className="grid grid-cols-3 gap-0 border-b border-slate-100">
-                            <button
-                              className="py-3 text-center text-xs font-bold transition-colors bg-green-50 hover:bg-green-100 text-green-700 border-r border-slate-100"
-                              onClick={() => completarItem('Normal')}
-                            >
-                              <Check className="h-4 w-4 mx-auto mb-0.5 text-green-600" />
-                              Normal
-                            </button>
-                            <button
-                              className={`py-3 text-center text-xs font-bold transition-colors border-r border-slate-100 ${
-                                diagEstado === 'observacion' ? 'bg-amber-100 text-amber-800' : 'bg-amber-50 hover:bg-amber-100 text-amber-700'
-                              }`}
-                              onClick={() => { setDiagEstado('observacion'); setDiagValue(''); }}
-                            >
-                              <AlertTriangle className="h-4 w-4 mx-auto mb-0.5 text-amber-500" />
-                              Observación
-                            </button>
-                            <button
-                              className={`py-3 text-center text-xs font-bold transition-colors ${
-                                diagEstado === 'falla' ? 'bg-red-100 text-red-800' : 'bg-red-50 hover:bg-red-100 text-red-700'
-                              }`}
-                              onClick={() => { setDiagEstado('falla'); setDiagValue(''); }}
-                            >
-                              <AlertTriangle className="h-4 w-4 mx-auto mb-0.5 text-red-500" />
-                              Falla
-                            </button>
-                          </div>
-
-                          {/* Paso 2: Chips de detalle (solo si Observación o Falla) */}
-                          {diagEstado && (
-                            <div className={`p-3 space-y-2.5 ${diagEstado === 'falla' ? 'bg-red-50/50' : 'bg-amber-50/50'}`}>
-                              <p className={`text-xs font-semibold ${diagEstado === 'falla' ? 'text-red-700' : 'text-amber-700'}`}>
-                                ¿Qué encontraste?
-                              </p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {chips.map(chip => (
-                                  <button
-                                    key={chip}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                      diagValue === chip
-                                        ? diagEstado === 'falla'
-                                          ? 'bg-red-600 text-white border-red-600'
-                                          : 'bg-amber-500 text-white border-amber-500'
-                                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400'
-                                    }`}
-                                    onClick={() => setDiagValue(chip)}
-                                  >
-                                    {chip}
-                                  </button>
-                                ))}
-                              </div>
-                              <Input
-                                placeholder="Otro (escribir aquí)"
-                                value={!chips.includes(diagValue) ? diagValue : ''}
-                                onChange={(e) => setDiagValue(e.target.value)}
-                                className="h-9 text-xs bg-white"
-                              />
-                              <Button
-                                className={`w-full h-10 text-sm font-semibold ${
-                                  diagEstado === 'falla' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'
-                                }`}
-                                disabled={!diagValue.trim()}
-                                onClick={() => completarItem(diagEstado === 'falla' ? 'FALLA' : 'OBSERVACIÓN', diagValue.trim())}
-                              >
-                                Confirmar {diagEstado === 'falla' ? 'falla' : 'observación'}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-            <div className="pt-2">
-              <label className="text-sm font-semibold text-slate-700 mb-1.5 block">Reporte de diagnóstico generado</label>
-              <Textarea 
-                placeholder="El reporte se irá construyendo automáticamente aquí..." 
-                value={notasTecnico} 
-                onChange={e => setNotasTecnico(e.target.value)} 
-                rows={5}
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Observaciones del diagnóstico</label>
+              <Textarea
+                placeholder="Describe el problema encontrado, mediciones, estado del equipo..."
+                value={observacionesDiag}
+                onChange={e => setObservacionesDiag(e.target.value)}
+                rows={4}
                 className="bg-slate-50 border-slate-200"
               />
             </div>
-            <div>
-              <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}
-                disabled={!itemsPorCat('diagnostico').every(i => i.completado)}>
-                Continuar a reparación <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
+
+            <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}
+              disabled={!itemsPorCat('diagnostico').every(i => i.completado)}>
+              Continuar a cotización <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* PASO 3 — REPARACIÓN */}
+      {/* PASO 3 — COTIZACIÓN */}
       {pasoActual === 3 && (
         <Card className="relative">
           <button onClick={() => setPasoActual(2)} className="absolute top-3 left-3 h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors z-10">
             <ArrowLeft className="h-4 w-4 text-slate-600" />
           </button>
           <CardContent className="p-4 pt-3 space-y-4">
-            <h2 className="font-bold text-lg text-center">Reparación</h2>
+            <h2 className="font-bold text-lg text-center">Cotización</h2>
+            <p className="text-sm text-slate-500 text-center -mt-2">Presenta los costos al cliente antes de iniciar la reparación</p>
 
-            {/* Repuestos section */}
+            {/* Insumos / Repuestos */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Repuestos utilizados</p>
+                <p className="text-sm font-semibold text-slate-700">Insumos / Repuestos</p>
                 {repuestos.length > 0 && (
                   <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                     {formatCurrency(repuestos.reduce((sum, r) => sum + r.cantidad * r.precio_unitario, 0))}
@@ -1201,7 +1002,6 @@ export const ServicioActivo = () => {
                 )}
               </div>
 
-              {/* Quick-add chips */}
               <div className="flex flex-wrap gap-1.5">
                 {(repuestosComunes[servicio.equipo?.tipo || 'otro'] || repuestosComunes.otro).map(rc => {
                   const added = repuestos.some(r => r.nombre === rc.nombre);
@@ -1213,14 +1013,8 @@ export const ServicioActivo = () => {
                           ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
                           : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
                       }`}
-                      onClick={async () => {
-                        if (!added) {
-                          const isFirst = repuestos.length === 0;
-                          setRepuestos(prev => [...prev, { nombre: rc.nombre, cantidad: 1, precio_unitario: rc.precio }]);
-                          if (isFirst) await autoCheckReparacionItem('repuestos');
-                          if (rc.nombre.toLowerCase().includes('gas')) await autoCheckReparacionItem('gas');
-                          if (isFirst || rc.nombre.toLowerCase().includes('gas')) fetchServicio();
-                        }
+                      onClick={() => {
+                        if (!added) setRepuestos(prev => [...prev, { nombre: rc.nombre, cantidad: 1, precio_unitario: rc.precio }]);
                       }}
                       disabled={added}
                     >
@@ -1230,7 +1024,6 @@ export const ServicioActivo = () => {
                 })}
               </div>
 
-              {/* Added repuestos list */}
               {repuestos.length > 0 && (
                 <div className="space-y-2">
                   {repuestos.map((r, idx) => (
@@ -1283,7 +1076,6 @@ export const ServicioActivo = () => {
                 </div>
               )}
 
-              {/* Custom add */}
               {showCustomRepuesto ? (
                 <div className="flex items-center gap-2">
                   <Input
@@ -1292,13 +1084,9 @@ export const ServicioActivo = () => {
                     placeholder="Nombre del repuesto"
                     className="flex-1 h-9 text-sm"
                     autoFocus
-                    onKeyDown={async (e) => {
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter' && customRepuestoNombre.trim()) {
-                        const isFirst = repuestos.length === 0;
                         setRepuestos(prev => [...prev, { nombre: customRepuestoNombre.trim(), cantidad: 1, precio_unitario: 0 }]);
-                        if (isFirst) await autoCheckReparacionItem('repuestos');
-                        if (customRepuestoNombre.toLowerCase().includes('gas')) await autoCheckReparacionItem('gas');
-                        if (isFirst || customRepuestoNombre.toLowerCase().includes('gas')) fetchServicio();
                         setCustomRepuestoNombre('');
                         setShowCustomRepuesto(false);
                       }
@@ -1306,13 +1094,9 @@ export const ServicioActivo = () => {
                   />
                   <Button
                     className="h-9 px-3 text-sm"
-                    onClick={async () => {
+                    onClick={() => {
                       if (customRepuestoNombre.trim()) {
-                        const isFirst = repuestos.length === 0;
                         setRepuestos(prev => [...prev, { nombre: customRepuestoNombre.trim(), cantidad: 1, precio_unitario: 0 }]);
-                        if (isFirst) await autoCheckReparacionItem('repuestos');
-                        if (customRepuestoNombre.toLowerCase().includes('gas')) await autoCheckReparacionItem('gas');
-                        if (isFirst || customRepuestoNombre.toLowerCase().includes('gas')) fetchServicio();
                         setCustomRepuestoNombre('');
                         setShowCustomRepuesto(false);
                       }
@@ -1334,238 +1118,142 @@ export const ServicioActivo = () => {
                   onClick={() => setShowCustomRepuesto(true)}
                 >
                   <Plus className="h-4 w-4" />
-                  Agregar otro repuesto
-                </button>
-              )}
-
-              {/* No repuestos option */}
-              {repuestos.length === 0 && !showCustomRepuesto && (
-                <button
-                  className="w-full text-xs text-slate-400 hover:text-slate-600 py-1 underline underline-offset-2"
-                  onClick={async () => {
-                    await autoCheckReparacionItem('repuestos');
-                    await autoCheckReparacionItem('gas');
-                    fetchServicio();
-                  }}
-                >
-                  No se usaron repuestos en este servicio
+                  Agregar insumo / repuesto
                 </button>
               )}
             </div>
 
-            {/* Remaining checklist items */}
-            <div className="space-y-2">
-              {itemsPorCat('reparacion')
-                .filter(item => {
-                  const d = item.descripcion.toLowerCase();
-                  return !d.includes('repuestos') && !d.includes('gas cargado');
-                })
-                .map(item => (
-                <button key={item.id} className="flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12" onClick={() => !item.completado && handleChecklistItem(item.id)} disabled={item.completado}>
-                  <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                  <span className={`text-sm ${item.completado ? 'line-through text-muted-foreground' : ''}`}>{item.descripcion}</span>
-                </button>
-              ))}
+            {/* Costo del servicio */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Mano de obra / Costo del servicio</label>
+              <Input
+                type="number"
+                value={costoServicio}
+                onChange={e => setCostoServicio(e.target.value)}
+                placeholder="0"
+              />
             </div>
 
-            {/* Fotos DURANTE — máx 2 */}
-            {(() => {
-              const fotosDurante = servicio.fotos?.filter(f => f.tipo === 'durante') || [];
-              const maxDurante = 2;
-              return (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">Fotos durante el servicio</p>
-                    <span className={`text-xs font-medium ${fotosDurante.length >= maxDurante ? 'text-emerald-600' : 'text-slate-500'}`}>{fotosDurante.length}/{maxDurante}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    {fotosDurante.map(f => (
-                      <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
-                        <img src={f.url} alt="Durante" className="w-full h-full object-cover rounded-xl" />
-                        <div className="absolute bottom-1 right-1 flex gap-1">
-                          <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
-                            <Download className="h-3.5 w-3.5 text-white" />
-                          </button>
-                          <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
-                            <Trash2 className="h-3.5 w-3.5 text-white" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {fotosDurante.length < maxDurante && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('durante', 'camera')}>
-                        <Camera className="h-4 w-4 mr-2" />
-                        {uploadingTipos.has('durante') ? 'Subiendo...' : 'Tomar foto'}
-                      </Button>
-                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('durante', 'gallery')}>
-                        <ImageIcon className="h-4 w-4 mr-2" />
-                        Galería
-                      </Button>
-                    </div>
-                  )}
-                  {fotosDurante.length >= maxDurante && (
-                    <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos durante completadas</p>
-                  )}
-                </div>
-              );
-            })()}
-
-            <div>
-              <Button className="w-full min-h-12" onClick={handleAvanzarACierre}
-                disabled={!itemsPorCat('reparacion').every(i => i.completado)}>
-                Continuar al cierre <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
+            {/* Método de pago */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Método de pago</label>
+              <Select value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="link_pago">Link de pago</option>
+              </Select>
             </div>
+
+            {/* Resumen total */}
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2 border border-slate-200">
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>Insumos / Repuestos</span>
+                <span>{formatCurrency(repuestos.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0))}</span>
+              </div>
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>Mano de obra</span>
+                <span>{formatCurrency(parseFloat(costoServicio) || 0)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-base border-t border-slate-200 pt-2 mt-1">
+                <span>Total</span>
+                <span className="text-emerald-700">
+                  {formatCurrency(repuestos.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0) + (parseFloat(costoServicio) || 0))}
+                </span>
+              </div>
+            </div>
+
+            <Button
+              className="w-full min-h-14 text-base bg-green-600 hover:bg-green-700 text-white"
+              onClick={handleClienteAcepta}
+              disabled={saving}
+            >
+              <Check className="h-5 w-5 mr-2" />
+              {saving ? 'Guardando...' : 'Cliente acepta — iniciar reparación'}
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* PASO 4 — CIERRE */}
-      {pasoActual === 4 && (() => {
-        const pendientes = checklist.filter(c => !c.completado);
-        const checklistCompleto = pendientes.length === 0;
-        return (
+      {/* PASO 4 — REPARACIÓN */}
+      {pasoActual === 4 && (
         <Card className="relative">
           <button onClick={() => setPasoActual(3)} className="absolute top-3 left-3 h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors z-10">
             <ArrowLeft className="h-4 w-4 text-slate-600" />
           </button>
           <CardContent className="p-4 pt-3 space-y-4">
-            <h2 className="font-bold text-lg text-center">Cierre del servicio</h2>
+            <h2 className="font-bold text-lg text-center">Reparación</h2>
 
-            {!checklistCompleto && (
-              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Checklist incompleto ({pendientes.length} pendientes)</p>
-                  <ul className="text-xs text-amber-700 mt-1 space-y-0.5">
-                    {pendientes.slice(0, 5).map(p => <li key={p.id}>• {p.descripcion}</li>)}
-                    {pendientes.length > 5 && <li>... y {pendientes.length - 5} más</li>}
-                  </ul>
-                </div>
+            {renderFotos('durante', 'Fotos de la reparación')}
+
+            {itemsPorCat('reparacion').length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-700">Verificación</p>
+                {itemsPorCat('reparacion').map(item => (
+                  <button
+                    key={item.id}
+                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 transition-colors ${
+                      item.completado ? 'bg-green-50 border-green-200' : 'hover:bg-slate-50'
+                    }`}
+                    onClick={() => !item.completado && handleChecklistItem(item.id)}
+                    disabled={item.completado}
+                  >
+                    <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
+                    <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
+                      {item.descripcion}
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
 
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Observaciones de la reparación</label>
+              <Textarea
+                placeholder="Describe el trabajo realizado, repuestos cambiados, resultados..."
+                value={observacionesRep}
+                onChange={e => setObservacionesRep(e.target.value)}
+                rows={4}
+                className="bg-slate-50 border-slate-200"
+              />
+            </div>
+
+            <Button className="w-full min-h-12" onClick={() => setPasoActual(5)}
+              disabled={!itemsPorCat('reparacion').every(i => i.completado)}>
+              Continuar al cierre <ArrowRight className="h-4 w-4 ml-1" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PASO 5 — CIERRE */}
+      {pasoActual === 5 && (
+        <Card className="relative">
+          <button onClick={() => setPasoActual(4)} className="absolute top-3 left-3 h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors z-10">
+            <ArrowLeft className="h-4 w-4 text-slate-600" />
+          </button>
+          <CardContent className="p-4 pt-3 space-y-4">
+            <h2 className="font-bold text-lg text-center">Cierre del servicio</h2>
+
+            {/* Resumen */}
             <div className="bg-muted/50 p-3 rounded-lg text-sm space-y-1">
               <p><strong>Cliente:</strong> {servicio.cliente?.nombre}</p>
               <p><strong>Equipo:</strong> {servicio.equipo ? `${tipoEquipoLabel[servicio.equipo.tipo]} ${servicio.equipo.marca || ''}` : '--'}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs font-medium">Checklist:</span>
-                <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                  <div className={`h-1.5 rounded-full transition-all ${checklistCompleto ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${((checklist.length - pendientes.length) / Math.max(1, checklist.length)) * 100}%` }} />
-                </div>
-                <span className="text-xs text-slate-500">{checklist.length - pendientes.length}/{checklist.length}</span>
-              </div>
+              {valorFinal && (
+                <p><strong>Total cobrado:</strong> {formatCurrency(parseFloat(valorFinal))}</p>
+              )}
             </div>
 
-            {/* Checklist de cierre */}
-            {itemsPorCat('cierre').length > 0 && (
-              <div>
-                <p className="text-sm font-medium mb-2">Checklist de cierre</p>
-                <div className="space-y-2">
-                  {itemsPorCat('cierre').map(item => {
-                    const desc = item.descripcion.toLowerCase();
-                    const isFirmaItem = desc.includes('firma');
-                    const isFotoItem = desc.includes('foto');
-                    const isValorItem = desc.includes('valor');
-                    const isAuto = isFirmaItem || isFotoItem || isValorItem;
-                    const hint = isFirmaItem
-                      ? '✍️ Se confirma al guardar la firma del cliente'
-                      : isFotoItem
-                        ? '📷 Se confirma al subir la foto'
-                        : isValorItem
-                          ? '💰 Se confirma al ingresar el valor cobrado'
-                          : null;
-                    return (
-                      <button
-                        key={item.id}
-                        className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 ${isAuto && !item.completado ? 'opacity-60 cursor-default' : ''}`}
-                        onClick={() => !item.completado && !isAuto && handleChecklistItem(item.id)}
-                        disabled={item.completado || isAuto}
-                      >
-                        <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                        <div className="flex-1">
-                          <span className={`text-sm ${item.completado ? 'line-through text-muted-foreground' : ''}`}>{item.descripcion}</span>
-                          {hint && !item.completado && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {renderFotos('despues', 'Fotos del equipo DESPUÉS')}
 
-            <div>
-              <label className="text-sm font-medium mb-1 block">Descripción del trabajo realizado *</label>
-              <Textarea value={descripcionTrabajo} onChange={e => setDescripcionTrabajo(e.target.value)} placeholder="Describe el trabajo que realizaste..." rows={3} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium mb-1 block">Valor cobrado *</label>
-                <Input type="number" value={valorFinal} onChange={e => setValorFinal(e.target.value)} placeholder="80000" />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Método de pago *</label>
-                <Select value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="link_pago">Link de pago</option>
-                </Select>
-              </div>
-            </div>
-
-            {/* Fotos DESPUÉS — máx 2 */}
-            {(() => {
-              const fotosDespues = servicio.fotos?.filter(f => f.tipo === 'despues') || [];
-              const maxDespues = 2;
-              return (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">Fotos después del servicio <span className="text-slate-400 font-normal">(obligatorias)</span></p>
-                    <span className={`text-xs font-medium ${fotosDespues.length >= maxDespues ? 'text-emerald-600' : 'text-slate-500'}`}>{fotosDespues.length}/{maxDespues}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    {fotosDespues.map(f => (
-                      <div key={f.id} className="aspect-square rounded-xl bg-gray-100 relative">
-                        <img src={f.url} alt="Después" className="w-full h-full object-cover rounded-xl" />
-                        <div className="absolute bottom-1 right-1 flex gap-1">
-                          <button onClick={() => handleDescargarFoto(f.url)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
-                            <Download className="h-3.5 w-3.5 text-white" />
-                          </button>
-                          <button onClick={() => handleEliminarFoto(f.id)} disabled={deletingFotos.has(f.id)} className="h-7 w-7 rounded-lg bg-black/60 hover:bg-red-600 flex items-center justify-center transition-colors disabled:opacity-50">
-                            <Trash2 className="h-3.5 w-3.5 text-white" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {fotosDespues.length < maxDespues && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('despues', 'camera')}>
-                        <Camera className="h-4 w-4 mr-2" />
-                        {uploadingTipos.has('despues') ? 'Subiendo...' : 'Tomar foto'}
-                      </Button>
-                      <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto('despues', 'gallery')}>
-                        <ImageIcon className="h-4 w-4 mr-2" />
-                        Galería
-                      </Button>
-                    </div>
-                  )}
-                  {fotosDespues.length >= maxDespues && (
-                    <p className="text-xs text-emerald-600 font-medium text-center">✓ Fotos después completadas</p>
-                  )}
-                </div>
-              );
-            })()}
-
+            {/* Firma del cliente */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium">Firma del cliente *</label>
-                {(firmada || servicio.firma) && <span className="text-xs text-green-600 flex items-center gap-1"><Check className="h-3 w-3" />Firmado</span>}
+                {(firmada || servicio.firma) && (
+                  <span className="text-xs text-green-600 flex items-center gap-1">
+                    <Check className="h-3 w-3" />Firmado
+                  </span>
+                )}
               </div>
               {servicio.firma ? (
                 <img src={servicio.firma.url} alt="Firma" className="border rounded-lg w-full h-32 object-contain bg-white" />
@@ -1589,88 +1277,16 @@ export const ServicioActivo = () => {
               )}
             </div>
 
-            {/* Verificación de falla */}
-            <div className="border rounded-xl p-4 space-y-3">
-              <p className="text-sm font-semibold">¿La falla fue la reportada por el cliente?</p>
-              {servicio.descripcion_falla && (
-                <div className="bg-slate-50 rounded-lg p-2.5">
-                  <p className="text-xs text-slate-500 font-medium mb-0.5">Falla reportada:</p>
-                  <p className="text-sm text-slate-800 italic">"{servicio.descripcion_falla}"</p>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <button
-                  className={`flex-1 p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
-                    fallaConfirmada === true ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 hover:border-green-300'
-                  }`}
-                  onClick={() => { setFallaConfirmada(true); setDiagnosticoFinal(''); }}
-                >
-                  <CheckCircle className={`h-5 w-5 mx-auto mb-1 ${fallaConfirmada === true ? 'text-green-500' : 'text-gray-300'}`} />
-                  Sí, fue esa
-                </button>
-                <button
-                  className={`flex-1 p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
-                    fallaConfirmada === false ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-300'
-                  }`}
-                  onClick={() => setFallaConfirmada(false)}
-                >
-                  <AlertTriangle className={`h-5 w-5 mx-auto mb-1 ${fallaConfirmada === false ? 'text-red-500' : 'text-gray-300'}`} />
-                  No, fue otra
-                </button>
-              </div>
-
-              {fallaConfirmada === false && (
-                <div className="space-y-2 pt-1">
-                  <p className="text-xs font-medium text-red-700">Selecciona el diagnóstico real:</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      'Fuga de gas refrigerante',
-                      'Compresor dañado',
-                      'Tarjeta electrónica',
-                      'Motor ventilador',
-                      'Capacitor defectuoso',
-                      'Obstrucción en drenaje',
-                      'Filtros sucios / obstruidos',
-                      'Sensor de temperatura',
-                      'Válvula de expansión',
-                      'Problema eléctrico / cableado',
-                      'Termostato dañado',
-                      'Bajo nivel de refrigerante',
-                    ].map(opcion => (
-                      <button
-                        key={opcion}
-                        className={`text-left text-xs p-2 rounded-lg border transition-colors ${
-                          diagnosticoFinal === opcion
-                            ? 'border-red-400 bg-red-50 text-red-800 font-medium'
-                            : 'border-gray-200 hover:border-red-200 text-slate-600'
-                        }`}
-                        onClick={() => setDiagnosticoFinal(opcion)}
-                      >
-                        {opcion}
-                      </button>
-                    ))}
-                  </div>
-                  <Input
-                    placeholder="Otro diagnóstico (escribir aquí)"
-                    value={!['Fuga de gas refrigerante','Compresor dañado','Tarjeta electrónica','Motor ventilador','Capacitor defectuoso','Obstrucción en drenaje','Filtros sucios / obstruidos','Sensor de temperatura','Válvula de expansión','Problema eléctrico / cableado','Termostato dañado','Bajo nivel de refrigerante'].includes(diagnosticoFinal) ? diagnosticoFinal : ''}
-                    onChange={(e) => setDiagnosticoFinal(e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-              )}
-            </div>
-
             <Button
               className="w-full min-h-14 text-base bg-green-600 hover:bg-green-700 text-white"
               onClick={handleCerrarServicio}
-              disabled={saving || !checklistCompleto || fallaConfirmada === null || (fallaConfirmada === false && !diagnosticoFinal)}
+              disabled={saving || (!firmada && !servicio.firma)}
             >
-              {saving ? 'Cerrando...' : !checklistCompleto ? `CHECKLIST INCOMPLETO (${pendientes.length})` : fallaConfirmada === null ? 'CONFIRMA LA FALLA' : 'CERRAR SERVICIO'}
+              {saving ? 'Cerrando...' : 'CERRAR SERVICIO'}
             </Button>
           </CardContent>
         </Card>
-        );
-      })()}
+      )}
 
       {/* Floating phone button */}
       {pasoActual >= 1 && servicio.cliente?.telefono && (
