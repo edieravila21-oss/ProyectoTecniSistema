@@ -4,7 +4,7 @@ import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio,
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
-import { getCatalogos } from '@/api/catalogoServicios';
+import { getCatalogos, actualizarCatalogo } from '@/api/catalogoServicios';
 import type { CatalogoServicio } from '@/api/catalogoServicios';
 import {
   getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
@@ -167,6 +167,9 @@ export const CalendarioTecnicos = () => {
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [slaDuraciones, setSlaDuraciones] = useState<Record<string, number>>({});
   const [catalogos, setCatalogos] = useState<CatalogoServicio[]>([]);
+  const [editandoCatalogo, setEditandoCatalogo] = useState(false);
+  const [catalogoEditForm, setCatalogoEditForm] = useState({ nombre: '', duracion_min: '' });
+  const [savingCatalogo, setSavingCatalogo] = useState(false);
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
   const [savingCliente, setSavingCliente] = useState(false);
   const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', telefono: '', direccion_principal: '' });
@@ -615,6 +618,29 @@ export const CalendarioTecnicos = () => {
     } finally {
       setSavingCliente(false);
     }
+  };
+
+  const handleGuardarCatalogo = async () => {
+    if (!citaForm.catalogoServicioId || !catalogoEditForm.nombre.trim()) return;
+    setSavingCatalogo(true);
+    try {
+      const newDur = parseInt(catalogoEditForm.duracion_min) || 60;
+      await actualizarCatalogo(citaForm.catalogoServicioId, {
+        nombre: catalogoEditForm.nombre.trim(),
+        duracion_min: newDur,
+      });
+      const { data: res } = await getCatalogos();
+      setCatalogos(res.data);
+      const [h, m] = citaForm.hora_inicio.split(':').map(Number);
+      const finMin = h * 60 + m + newDur;
+      setCitaForm(f => ({
+        ...f,
+        hora_fin: `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`,
+      }));
+      setEditandoCatalogo(false);
+      toast.success('Servicio actualizado');
+    } catch { toast.error('Error actualizando servicio'); }
+    finally { setSavingCatalogo(false); }
   };
 
   const handleCrearCita = async () => {
@@ -1816,8 +1842,10 @@ export const CalendarioTecnicos = () => {
                           const finMin = h * 60 + m + cat.duracion_min;
                           const fin = `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
                           setCitaForm(f => ({ ...f, catalogoServicioId: id, tipo_servicio: tipo, hora_fin: fin }));
+                          setEditandoCatalogo(false);
                         } else {
                           setCitaForm(f => ({ ...f, catalogoServicioId: '', tipo_servicio: '' }));
+                          setEditandoCatalogo(false);
                         }
                       }}
                       className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
@@ -1829,11 +1857,62 @@ export const CalendarioTecnicos = () => {
                     </select>
                     {citaForm.catalogoServicioId && (() => {
                       const cat = catalogos.find(c => c.id === citaForm.catalogoServicioId);
-                      return cat ? (
-                        <p className="text-[11px] text-blue-500 mt-1 flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> Duración estimada: {cat.duracion_min} min
-                        </p>
-                      ) : null;
+                      if (!cat) return null;
+                      return (
+                        <div className="mt-1.5">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[11px] text-blue-500 flex items-center gap-1">
+                              <Clock className="h-3 w-3" /> Duración estimada: {cat.duracion_min} min
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCatalogoEditForm({ nombre: cat.nombre, duracion_min: String(cat.duracion_min) });
+                                setEditandoCatalogo(v => !v);
+                              }}
+                              className="h-5 w-5 rounded flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                              title="Editar nombre y duración"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          </div>
+                          {editandoCatalogo && (
+                            <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
+                              <p className="text-[11px] font-semibold text-blue-700">Editar servicio del catálogo</p>
+                              <input
+                                type="text"
+                                value={catalogoEditForm.nombre}
+                                onChange={e => setCatalogoEditForm(f => ({ ...f, nombre: e.target.value }))}
+                                className="w-full h-8 px-3 rounded-lg border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                placeholder="Nombre del servicio"
+                              />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  value={catalogoEditForm.duracion_min}
+                                  onChange={e => setCatalogoEditForm(f => ({ ...f, duracion_min: e.target.value }))}
+                                  className="w-24 h-8 px-3 rounded-lg border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                  min={15} step={15}
+                                />
+                                <span className="text-xs text-blue-600">min</span>
+                                <div className="flex gap-1 ml-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditandoCatalogo(false)}
+                                    className="h-7 px-2 rounded-lg text-xs text-slate-500 hover:bg-slate-100 transition-colors"
+                                  >Cancelar</button>
+                                  <button
+                                    type="button"
+                                    onClick={handleGuardarCatalogo}
+                                    disabled={savingCatalogo}
+                                    className="h-7 px-3 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50 transition-colors"
+                                  >{savingCatalogo ? 'Guardando…' : 'Guardar'}</button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
                     })()}
                   </div>
 
