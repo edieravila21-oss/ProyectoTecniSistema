@@ -97,7 +97,8 @@ export const ServicioActivo = () => {
   const [notaPausa, setNotaPausa] = useState('');
   const [fechaReanudacion, setFechaReanudacion] = useState('');
   const [horaReanudacion, setHoraReanudacion] = useState('');
-  const [diagModal, setDiagModal] = useState<{ id: string; descripcion: string } | null>(null);
+  const [diagModal, setDiagModal] = useState(false);
+  const [diagSelecciones, setDiagSelecciones] = useState<string[]>([]);
 
   const fetchServicio = async () => {
     if (!id) return;
@@ -942,33 +943,54 @@ export const ServicioActivo = () => {
 
             {renderFotos('durante', 'Fotos del diagnóstico')}
 
+            {/* Checklist — simple checkboxes */}
             {itemsPorCat('diagnostico').length > 0 && (
               <div className="space-y-2">
                 {itemsPorCat('diagnostico').map(item => (
-                  <div key={item.id} className={`flex items-center gap-3 p-3 rounded-xl border ${
-                    item.completado ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200'
-                  }`}>
+                  <button
+                    key={item.id}
+                    className={`flex items-center gap-3 w-full p-3 rounded-xl border text-left transition-colors ${
+                      item.completado ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200 hover:bg-slate-50'
+                    }`}
+                    onClick={() => !item.completado && handleChecklistItem(item.id)}
+                    disabled={item.completado}
+                  >
                     <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                    <span className={`text-sm font-medium flex-1 ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
+                    <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
                       {item.descripcion}
                     </span>
-                    {!item.completado && (
-                      <button
-                        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                        onClick={() => setDiagModal({ id: item.id, descripcion: item.descripcion })}
-                      >
-                        Seleccionar
-                      </button>
-                    )}
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
 
+            {/* Selector de errores típicos */}
+            <div className="space-y-2">
+              <button
+                className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors"
+                onClick={() => setDiagModal(true)}
+              >
+                <span className="text-sm font-semibold text-blue-700">Seleccionar errores / hallazgos típicos</span>
+                <span className="text-blue-500 text-lg">＋</span>
+              </button>
+              {diagSelecciones.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {diagSelecciones.map(s => (
+                    <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 border border-red-200 text-red-700">
+                      {s}
+                      <button onClick={() => setDiagSelecciones(prev => prev.filter(x => x !== s))} className="hover:text-red-900">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div>
               <label className="text-sm font-medium mb-1.5 block">Observaciones del diagnóstico</label>
               <Textarea
-                placeholder="Describe el problema encontrado, mediciones, estado del equipo..."
+                placeholder="Describe mediciones, condiciones del equipo, información adicional..."
                 value={observacionesDiag}
                 onChange={e => setObservacionesDiag(e.target.value)}
                 rows={4}
@@ -1300,61 +1322,73 @@ export const ServicioActivo = () => {
         </a>
       )}
 
-      {/* Modal diagnóstico */}
+      {/* Modal diagnóstico — errores típicos por tipo de equipo */}
       {diagModal && (() => {
-        const chipsPorItem: Record<string, string[]> = {
-          voltaje: ['Bajo', 'Alto', 'Inestable', 'Sin voltaje'],
-          amperaje: ['Bajo', 'Alto', 'Inestable', 'Pico anormal'],
-          gas: ['Bajo nivel', 'Vacío', 'Fuga detectada', 'Requiere recarga'],
-          refrigerante: ['Bajo nivel', 'Vacío', 'Fuga detectada', 'Requiere recarga'],
-          compresor: ['Ruido anormal', 'No arranca', 'Sobrecalentado', 'Trabado'],
-          filtro: ['Sucios', 'Obstruidos', 'Rotos', 'Requieren cambio'],
-          condensador: ['Sucio', 'Aletas dobladas', 'Ventilador no gira', 'Sobrecalentado'],
-          evaporador: ['Congelado', 'Sucio', 'Fuga detectada', 'No enfría'],
-          termostato: ['No regula', 'Descalibrado', 'No responde', 'Dañado'],
-          ventilador: ['No gira', 'Ruido anormal', 'Gira lento', 'Aspas dañadas'],
-          resistencia: ['No calienta', 'Quemada', 'Intermitente'],
-          deshielo: ['No calienta', 'Quemada', 'Intermitente'],
-          sello: ['Desgastado', 'Roto', 'No sella bien'],
-          tarjeta: ['Quemada', 'Corto circuito', 'Error en display', 'No responde'],
-          temperatura: ['No enfría', 'Enfría poco', 'Congela en exceso', 'Inestable'],
-          control: ['No responde', 'Pilas agotadas', 'Botones dañados'],
-          drenaje: ['Obstruido', 'Gotea', 'Bandeja llena', 'Tubería rota'],
-          condensado: ['Obstruido', 'Gotea', 'Bandeja llena', 'Tubería rota'],
+        const erroresPorTipo: Record<string, string[]> = {
+          aire_acondicionado: [
+            'No enfría', 'Enfría poco', 'Fuga de gas refrigerante', 'Ruido en compresor',
+            'No enciende', 'Gotea agua al interior', 'Control remoto no responde',
+            'Apaga solo (protección térmica)', 'Evaporador congelado', 'Mal olor',
+            'Compresor no arranca', 'Ventilador no gira', 'Tarjeta electrónica dañada',
+            'Capacitor defectuoso', 'Filtros sucios', 'Obstrucción en drenaje',
+            'Sensor de temperatura dañado', 'Bajo nivel de refrigerante',
+          ],
+          nevera: [
+            'No enfría', 'Congela en exceso', 'Compartimento no enfría',
+            'Gotea agua', 'No enciende', 'Ruido anormal', 'Mal olor',
+            'No hace hielo', 'Falla de iluminación interna', 'Selladura dañada',
+            'Compresor no arranca', 'Acumula escarcha', 'Timer de deshielo dañado',
+            'Resistencia de deshielo quemada', 'Termostato descalibrado', 'Fuga de gas',
+          ],
+          otro: [
+            'No enciende', 'Ruido anormal', 'Sobrecalentamiento', 'No funciona',
+            'Fallo electrónico', 'Vibración excesiva', 'Fuga de líquido',
+            'Error en display', 'Protección activada', 'Cortocircuito',
+          ],
         };
-        const d = diagModal.descripcion.toLowerCase();
-        const chips = Object.entries(chipsPorItem).find(([key]) => d.includes(key))?.[1]
-          ?? ['Desgaste', 'Dañado', 'Requiere cambio', 'Ruido anormal'];
-        const seleccionar = (chip: string) => {
-          void chip;
-          handleChecklistItem(diagModal.id);
-          setDiagModal(null);
+        const tipo = servicio.equipo?.tipo || 'otro';
+        const opciones = erroresPorTipo[tipo] ?? erroresPorTipo.otro;
+        const confirmar = () => {
+          if (diagSelecciones.length > 0) {
+            const texto = diagSelecciones.join(', ');
+            setObservacionesDiag(prev => prev ? `${prev}\nHallazgos: ${texto}` : `Hallazgos: ${texto}`);
+          }
+          setDiagModal(false);
+          setDiagSelecciones([]);
         };
         return (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setDiagModal(null)}>
-            <div className="bg-white rounded-3xl w-full max-w-lg p-6 space-y-5 shadow-xl" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-base text-slate-800">{diagModal.descripcion}</h3>
-                <button onClick={() => setDiagModal(null)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => { setDiagModal(false); setDiagSelecciones([]); }}>
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b">
+                <h3 className="font-bold text-base text-slate-800">Errores / hallazgos típicos</h3>
+                <button onClick={() => { setDiagModal(false); setDiagSelecciones([]); }} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-green-50 border border-green-300 text-green-700 hover:bg-green-100 transition-colors"
-                  onClick={() => seleccionar('Normal')}
-                >
-                  ✓ Normal
-                </button>
-                {chips.map(chip => (
-                  <button
-                    key={chip}
-                    className="px-4 py-2 rounded-xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700 transition-colors"
-                    onClick={() => seleccionar(chip)}
-                  >
-                    {chip}
-                  </button>
-                ))}
+              <div className="p-5 max-h-72 overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {opciones.map(op => {
+                    const sel = diagSelecciones.includes(op);
+                    return (
+                      <button
+                        key={op}
+                        className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-colors ${
+                          sel
+                            ? 'bg-red-600 border-red-600 text-white'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700'
+                        }`}
+                        onClick={() => setDiagSelecciones(prev => sel ? prev.filter(x => x !== op) : [...prev, op])}
+                      >
+                        {sel ? '✓ ' : ''}{op}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-4 border-t">
+                <Button className="w-full min-h-11" onClick={confirmar} disabled={diagSelecciones.length === 0}>
+                  Agregar {diagSelecciones.length > 0 ? `(${diagSelecciones.length})` : ''} a observaciones
+                </Button>
               </div>
             </div>
           </div>
