@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  getServicio, cambiarEstadoServicio, marcarChecklistItem,
+  getServicio, cambiarEstadoServicio,
   subirFoto, eliminarFoto, guardarFirma, actualizarServicio,
   getHistorialEquipo,
 } from '@/api/servicios';
-import { cacheServicio, getCachedServicio, enqueueChecklist, enqueueFoto } from '@/lib/offlineDb';
+import { cacheServicio, getCachedServicio, enqueueFoto } from '@/lib/offlineDb';
 import { processSyncQueue } from '@/lib/syncManager';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { getHistorialCliente } from '@/api/clientes';
@@ -19,7 +19,7 @@ import { toast } from '@/components/shared/Toast';
 import { tipoEquipoLabel, formatCurrency } from '@/utils/helpers';
 import type { Servicio, MetodoPago } from '@/types';
 import {
-  Phone, MapPin, Camera, Check, CheckCircle, WifiOff,
+  Phone, MapPin, Camera, Check, WifiOff,
   Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History,
   User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle, ImageIcon,
 } from 'lucide-react';
@@ -153,26 +153,6 @@ export const ServicioActivo = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  useEffect(() => {
-    if (servicio?.equipo) {
-      const marcasConocidas = [
-        'Samsung','LG','Carrier','Daikin','Midea','York','Trane','Lennox','Panasonic',
-        'Gree','Hisense','TCL','Aux','Whirlpool','Electrolux','Mabe','Haceb',
-        'Challenger','Indurama','Bosch','Frigidaire','Daewoo',
-      ];
-      const marcaEquipo = servicio.equipo.marca || '';
-      const esConocida = marcasConocidas.includes(marcaEquipo);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCorreccionData({
-        marca: esConocida ? marcaEquipo : marcaEquipo ? 'Otra' : '',
-        marcaOtra: esConocida ? '' : marcaEquipo,
-        capacidad: servicio.equipo.notas || '',
-        tecnologia: '',
-        tipo: servicio.equipo.tipo || '',
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [servicio?.equipo?.id]);
 
   useEffect(() => {
     if (servicio?.equipoId) {
@@ -226,33 +206,6 @@ export const ServicioActivo = () => {
     finally { setSaving(false); }
   };
 
-  const handleChecklistItem = async (itemId: string) => {
-    if (!id) return;
-
-    if (!navigator.onLine) {
-      setServicio(prev => prev ? {
-        ...prev,
-        checklist: (prev.checklist || []).map(c => c.id === itemId ? { ...c, completado: true } : c),
-      } : prev);
-      await enqueueChecklist(id, itemId).catch(() => {});
-      return;
-    }
-
-    try {
-      await marcarChecklistItem(id, itemId);
-      fetchServicio();
-    } catch { toast.error('Error actualizando checklist'); }
-  };
-
-  const autoCheckLlegadaItem = async (keyword: string) => {
-    if (!servicio) return;
-    const item = (servicio.checklist || []).find(
-      c => c.categoria === 'llegada' && !c.completado && c.descripcion.toLowerCase().includes(keyword)
-    );
-    if (item && id) {
-      try { await marcarChecklistItem(id, item.id); } catch { /* best-effort */ }
-    }
-  };
 
   const handleClienteAcepta = async () => {
     if (!id) return;
@@ -302,7 +255,6 @@ export const ServicioActivo = () => {
         formData.append('foto', file);
         formData.append('tipo', tipo);
         await subirFoto(id, formData);
-        if (tipo === 'antes') await autoCheckLlegadaItem('foto');
         fetchServicio();
       } catch { toast.error('Error subiendo foto, intenta de nuevo'); }
       finally { setUploadingTipos(prev => { const s = new Set(prev); s.delete(tipo); return s; }); }
@@ -392,8 +344,6 @@ export const ServicioActivo = () => {
     );
   }
 
-  const checklist = servicio.checklist || [];
-  const itemsPorCat = (cat: string) => checklist.filter(c => c.categoria === cat);
 
   const renderFotos = (tipo: 'antes' | 'durante' | 'despues', label: string) => {
     const fotos = servicio.fotos?.filter(f => f.tipo === tipo) || [];
@@ -702,27 +652,6 @@ export const ServicioActivo = () => {
             <h2 className="font-bold text-lg text-center">Diagnóstico</h2>
 
             {renderFotos('durante', 'Fotos del diagnóstico')}
-
-            {/* Checklist — simple checkboxes */}
-            {itemsPorCat('diagnostico').length > 0 && (
-              <div className="space-y-2">
-                {itemsPorCat('diagnostico').map(item => (
-                  <button
-                    key={item.id}
-                    className={`flex items-center gap-3 w-full p-3 rounded-xl border text-left transition-colors ${
-                      item.completado ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200 hover:bg-slate-50'
-                    }`}
-                    onClick={() => !item.completado && handleChecklistItem(item.id)}
-                    disabled={item.completado}
-                  >
-                    <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                    <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
-                      {item.descripcion}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
 
             {/* Selector de errores típicos */}
             <div className="space-y-2">
