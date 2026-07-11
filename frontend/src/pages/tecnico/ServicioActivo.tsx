@@ -1243,8 +1243,6 @@ export const ServicioActivo = () => {
               )}
             </div>
 
-            {renderFotos('despues', 'Fotos del equipo DESPUÉS')}
-
             {/* Firma del cliente */}
             <div>
               <div className="flex items-center justify-between mb-2">
