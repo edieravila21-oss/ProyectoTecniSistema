@@ -175,6 +175,7 @@ const crear = async (req, res, next) => {
     const {
       clienteId, equipoId, tecnicoId, descripcion_falla, fecha_programada,
       hora_inicio, hora_fin, direccion_servicio, valor_estimado, notas_admin, origen, tipo_servicio,
+      catalogoServicioId,
     } = req.body;
 
     if (!clienteId) {
@@ -211,7 +212,29 @@ const crear = async (req, res, next) => {
       }
     }
 
-    const checklistItems = getChecklistPorTipo(tipoEquipo, tipo_servicio);
+    let checklistItems;
+    if (catalogoServicioId) {
+      const catalogo = await prisma.catalogoServicio.findUnique({
+        where: { id: catalogoServicioId },
+        include: { items: { orderBy: { orden: 'asc' } } },
+      });
+      if (catalogo) {
+        checklistItems = catalogo.items.map(item => ({
+          categoria: item.categoria,
+          descripcion: item.descripcion,
+          orden: item.orden,
+          completado: false,
+        }));
+        if (hora_inicio && !horaFinFinal) {
+          const [h, m] = hora_inicio.split(':').map(Number);
+          const finMin = h * 60 + m + catalogo.duracion_min;
+          horaFinFinal = `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
+        }
+      }
+    }
+    if (!checklistItems) {
+      checklistItems = getChecklistPorTipo(tipoEquipo, tipo_servicio);
+    }
 
     const servicio = await prisma.servicio.create({
       data: {

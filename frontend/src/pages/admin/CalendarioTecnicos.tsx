@@ -4,6 +4,8 @@ import { getServicios, crearServicio, cambiarEstadoServicio, actualizarServicio,
 import { getUsuarios } from '@/api/usuarios';
 import { getClientes, getEquipos, crearCliente, getDirecciones } from '@/api/clientes';
 import { getSlaConfigs } from '@/api/slaConfig';
+import { getCatalogos } from '@/api/catalogoServicios';
+import type { CatalogoServicio } from '@/api/catalogoServicios';
 import {
   getEventosCalendario, crearEventoCalendario, actualizarEventoCalendario,
   eliminarEventoCalendario, crearEventosCalendarioBulk, limpiarEventosDuplicados,
@@ -164,12 +166,14 @@ export const CalendarioTecnicos = () => {
   const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [equipos, setEquipos] = useState<Equipo[]>([]);
   const [slaDuraciones, setSlaDuraciones] = useState<Record<string, number>>({});
+  const [catalogos, setCatalogos] = useState<CatalogoServicio[]>([]);
   const [showNuevoCliente, setShowNuevoCliente] = useState(false);
   const [savingCliente, setSavingCliente] = useState(false);
   const [nuevoClienteForm, setNuevoClienteForm] = useState({ nombre: '', telefono: '', direccion_principal: '' });
   const [clienteDirecciones, setClienteDirecciones] = useState<{ id: string; nombre: string; direccion: string; principal: boolean }[]>([]);
   const [citaForm, setCitaForm] = useState({
     clienteId: '', equipoId: '', tecnicoId: '',
+    catalogoServicioId: '',
     tipo_servicio: '', descripcion_falla: '',
     fecha_programada: '', hora_inicio: '08:00', hora_fin: '10:00',
     direccion_servicio: '', valor_estimado: '40000',
@@ -546,6 +550,7 @@ export const CalendarioTecnicos = () => {
         r.data.data.forEach(s => { map[s.tipo_servicio] = s.max_tiempo_ejecucion_min; });
         setSlaDuraciones(map);
       }).catch(() => {});
+      getCatalogos().then(r => setCatalogos(r.data.data)).catch(() => {});
     }
     setShowModal(true);
   };
@@ -1793,8 +1798,48 @@ export const CalendarioTecnicos = () => {
               {modalMode === 'cita' && !editingEvento && (
                 <div className="p-5 space-y-4">
                   {/* Fecha primero para computar disponibilidad */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-3">
+                  {/* Tipo de servicio — primero */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Tipo de servicio</label>
+                    <select
+                      value={citaForm.catalogoServicioId}
+                      onChange={e => {
+                        const id = e.target.value;
+                        const cat = catalogos.find(c => c.id === id);
+                        if (cat) {
+                          const nb = cat.nombre.toLowerCase();
+                          const tipo = nb.includes('instalac') ? 'instalacion'
+                            : nb.includes('mantenimiento') ? 'mantenimiento'
+                            : nb.includes('reparac') ? 'reparacion'
+                            : 'diagnostico';
+                          const [h, m] = citaForm.hora_inicio.split(':').map(Number);
+                          const finMin = h * 60 + m + cat.duracion_min;
+                          const fin = `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
+                          setCitaForm(f => ({ ...f, catalogoServicioId: id, tipo_servicio: tipo, hora_fin: fin }));
+                        } else {
+                          setCitaForm(f => ({ ...f, catalogoServicioId: '', tipo_servicio: '' }));
+                        }
+                      }}
+                      className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">Seleccionar tipo de servicio…</option>
+                      {catalogos.filter(c => c.activo).map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                    {citaForm.catalogoServicioId && (() => {
+                      const cat = catalogos.find(c => c.id === citaForm.catalogoServicioId);
+                      return cat ? (
+                        <p className="text-[11px] text-blue-500 mt-1 flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> Duración estimada: {cat.duracion_min} min
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
+
+                  {/* Fecha + Horas */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
                         Fecha <span className="text-slate-400 font-normal">(Lun–Sáb, sin festivos)</span>
                       </label>
@@ -1816,7 +1861,8 @@ export const CalendarioTecnicos = () => {
                       <input type="time" value={citaForm.hora_inicio}
                         onChange={e => {
                           const inicio = e.target.value;
-                          const dur = slaDuraciones[citaForm.tipo_servicio];
+                          const cat = catalogos.find(c => c.id === citaForm.catalogoServicioId);
+                          const dur = cat ? cat.duracion_min : slaDuraciones[citaForm.tipo_servicio];
                           if (dur) {
                             const [h, m] = inicio.split(':').map(Number);
                             const finMin = h * 60 + m + dur;
@@ -1831,36 +1877,15 @@ export const CalendarioTecnicos = () => {
                     <div>
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
                         Fin
-                        {slaDuraciones[citaForm.tipo_servicio] && (
-                          <span className="ml-1 text-blue-500 font-normal">({slaDuraciones[citaForm.tipo_servicio]} min)</span>
-                        )}
+                        {(() => {
+                          const cat = catalogos.find(c => c.id === citaForm.catalogoServicioId);
+                          const dur = cat ? cat.duracion_min : slaDuraciones[citaForm.tipo_servicio];
+                          return dur ? <span className="ml-1 text-blue-500 font-normal">({dur} min)</span> : null;
+                        })()}
                       </label>
                       <input type="time" value={citaForm.hora_fin}
                         onChange={e => setCitaForm(f => ({ ...f, hora_fin: e.target.value }))}
                         className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Tipo servicio</label>
-                      <select value={citaForm.tipo_servicio}
-                        onChange={e => {
-                          const tipo = e.target.value;
-                          const dur = slaDuraciones[tipo];
-                          if (dur) {
-                            const [h, m] = citaForm.hora_inicio.split(':').map(Number);
-                            const finMin = h * 60 + m + dur;
-                            const fin = `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
-                            setCitaForm(f => ({ ...f, tipo_servicio: tipo, hora_fin: fin }));
-                          } else {
-                            setCitaForm(f => ({ ...f, tipo_servicio: tipo }));
-                          }
-                        }}
-                        className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                        <option value="">Tipo</option>
-                        <option value="diagnostico">Diagnóstico</option>
-                        <option value="mantenimiento">Mantenimiento</option>
-                        <option value="reparacion">Reparación</option>
-                        <option value="instalacion">Instalación</option>
-                      </select>
                     </div>
                   </div>
 
