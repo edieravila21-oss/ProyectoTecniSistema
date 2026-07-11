@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   getServicio, cambiarEstadoServicio, marcarChecklistItem,
   subirFoto, eliminarFoto, guardarFirma, actualizarServicio,
-  getHistorialEquipo, corregirEquipo, registrarEquipo,
+  getHistorialEquipo,
 } from '@/api/servicios';
 import { cacheServicio, getCachedServicio, enqueueChecklist, enqueueFoto } from '@/lib/offlineDb';
 import { processSyncQueue } from '@/lib/syncManager';
@@ -89,7 +89,6 @@ export const ServicioActivo = () => {
   const [historialEquipo, setHistorialEquipo] = useState<Servicio[]>([]);
   const [historialTotal, setHistorialTotal] = useState(0);
   const [clienteHistorial, setClienteHistorial] = useState<HistorialCliente | null>(null);
-  const [correccionData, setCorreccionData] = useState({ marca: '', marcaOtra: '', capacidad: '', tecnologia: '', tipo: '' });
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
   const [showCustomRepuesto, setShowCustomRepuesto] = useState(false);
   const [customRepuestoNombre, setCustomRepuestoNombre] = useState('');
@@ -97,8 +96,13 @@ export const ServicioActivo = () => {
   const [notaPausa, setNotaPausa] = useState('');
   const [fechaReanudacion, setFechaReanudacion] = useState('');
   const [horaReanudacion, setHoraReanudacion] = useState('');
+  const [observacionesLlegada, setObservacionesLlegada] = useState('');
+  const [llegadaModal, setLlegadaModal] = useState(false);
+  const [llegadaSelecciones, setLlegadaSelecciones] = useState<string[]>([]);
   const [diagModal, setDiagModal] = useState(false);
   const [diagSelecciones, setDiagSelecciones] = useState<string[]>([]);
+  const [repModal, setRepModal] = useState(false);
+  const [repSelecciones, setRepSelecciones] = useState<string[]>([]);
 
   const fetchServicio = async () => {
     if (!id) return;
@@ -128,16 +132,7 @@ export const ServicioActivo = () => {
     if (!initialLoadDone.current) {
       initialLoadDone.current = true;
       if (data.estado === 'asignado' || data.estado === 'en_camino' || data.estado === 'pausado') setPasoActual(0);
-      else if (data.estado === 'en_servicio') {
-        const cl = data.checklist || [];
-        const llegada = cl.filter(c => c.categoria === 'llegada');
-        const diag = cl.filter(c => c.categoria === 'diagnostico');
-        const rep = cl.filter(c => c.categoria === 'reparacion');
-        if (rep.every(c => c.completado)) setPasoActual(5);
-        else if (diag.every(c => c.completado)) setPasoActual(4);
-        else if (llegada.every(c => c.completado)) setPasoActual(2);
-        else setPasoActual(1);
-      }
+      else if (data.estado === 'en_servicio') setPasoActual(1);
     }
     if (data.valor_final) setValorFinal(String(data.valor_final));
     if (data.repuestos) setRepuestos(data.repuestos);
@@ -225,14 +220,7 @@ export const ServicioActivo = () => {
     try {
       await cambiarEstadoServicio(id, 'en_servicio');
       toast.success('Servicio reanudado');
-      const cl = servicio.checklist || [];
-      const llegada = cl.filter(c => c.categoria === 'llegada');
-      const diag = cl.filter(c => c.categoria === 'diagnostico');
-      const rep = cl.filter(c => c.categoria === 'reparacion');
-      if (rep.every(c => c.completado)) setPasoActual(5);
-      else if (diag.every(c => c.completado)) setPasoActual(4);
-      else if (llegada.every(c => c.completado)) setPasoActual(2);
-      else setPasoActual(1);
+      setPasoActual(1);
       fetchServicio();
     } catch (err: unknown) { toast.error((err as {response?: {data?: {error?: string}}}).response?.data?.error || 'Error al retomar'); }
     finally { setSaving(false); }
@@ -378,6 +366,7 @@ export const ServicioActivo = () => {
         await handleGuardarFirma();
       }
       const notas = [
+        observacionesLlegada && `Llegada:\n${observacionesLlegada}`,
         observacionesDiag && `Diagnóstico:\n${observacionesDiag}`,
         observacionesRep && `Reparación:\n${observacionesRep}`,
       ].filter(Boolean).join('\n\n');
@@ -664,268 +653,39 @@ export const ServicioActivo = () => {
 
             {renderFotos('antes', 'Fotos del equipo ANTES')}
 
-            {/* Checklist de llegada */}
+            {/* Selector de verificaciones */}
             <div className="space-y-2">
-              {(() => {
-                const tieneFotoAntes = servicio.fotos?.some(f => f.tipo === 'antes');
-                return itemsPorCat('llegada').map(item => {
-                  const desc = item.descripcion.toLowerCase();
-                  const isFotoItem = desc.includes('foto');
-                  const isEquipoItem = desc.includes('modelo') || desc.includes('serial') || desc.includes('btu') || desc.includes('verificar datos') || desc.includes('datos del equipo') || desc.includes('confirmar datos');
-                  const bloqueadoSinFoto = !isFotoItem && !tieneFotoAntes && !item.completado;
-                  const isDisabled = item.completado || isFotoItem || bloqueadoSinFoto || (isEquipoItem && !item.completado);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`flex items-start gap-3 w-full p-3 rounded-lg border text-left min-h-12 transition-opacity ${
-                        (isFotoItem && !item.completado) || bloqueadoSinFoto ? 'opacity-50 cursor-not-allowed' : ''
-                      } ${item.completado ? 'bg-green-50 border-green-200' : ''} ${!isDisabled ? 'cursor-pointer hover:bg-slate-50' : ''}`}
-                      onClick={() => !isDisabled && handleChecklistItem(item.id)}
-                    >
-                      <CheckCircle className={`h-6 w-6 shrink-0 mt-0.5 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                      <div className="flex-1 min-w-0">
-                        <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : ''}`}>
-                          {item.descripcion}
-                        </span>
-                        {isFotoItem && !item.completado && (
-                          <p className="text-[11px] text-slate-400 mt-0.5">📷 Se confirma automáticamente al tomar la foto</p>
-                        )}
-                        {bloqueadoSinFoto && (
-                          <p className="text-[11px] text-slate-400 mt-0.5">🔒 Primero toma la foto del equipo</p>
-                        )}
-                        {isEquipoItem && tieneFotoAntes && !servicio.equipo && !item.completado && (
-                          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                            <p className="text-xs font-semibold text-blue-700">Registra los datos del equipo:</p>
-                            <div className="space-y-1.5">
-                              <label className="text-[11px] font-medium text-slate-500">Tipo de equipo</label>
-                              <select
-                                value={correccionData.tipo}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, tipo: e.target.value, marca: '', marcaOtra: '', capacidad: '', tecnologia: '' }))}
-                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">Seleccionar tipo</option>
-                                <option value="aire_acondicionado">Aire Acondicionado</option>
-                                <option value="nevera">Nevera</option>
-                                <option value="otro">Otro</option>
-                              </select>
-                              <label className="text-[11px] font-medium text-slate-500">Marca</label>
-                              <select
-                                value={correccionData.marca}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, marca: e.target.value, marcaOtra: '' }))}
-                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">Seleccionar marca</option>
-                                {correccionData.tipo === 'aire_acondicionado' ? (
-                                  <>
-                                    <option value="Samsung">Samsung</option>
-                                    <option value="LG">LG</option>
-                                    <option value="Carrier">Carrier</option>
-                                    <option value="Daikin">Daikin</option>
-                                    <option value="Midea">Midea</option>
-                                    <option value="York">York</option>
-                                    <option value="Trane">Trane</option>
-                                    <option value="Lennox">Lennox</option>
-                                    <option value="Panasonic">Panasonic</option>
-                                    <option value="Gree">Gree</option>
-                                    <option value="Hisense">Hisense</option>
-                                    <option value="TCL">TCL</option>
-                                    <option value="Aux">Aux</option>
-                                    <option value="Whirlpool">Whirlpool</option>
-                                    <option value="Electrolux">Electrolux</option>
-                                  </>
-                                ) : correccionData.tipo === 'nevera' ? (
-                                  <>
-                                    <option value="Samsung">Samsung</option>
-                                    <option value="LG">LG</option>
-                                    <option value="Whirlpool">Whirlpool</option>
-                                    <option value="Mabe">Mabe</option>
-                                    <option value="Haceb">Haceb</option>
-                                    <option value="Electrolux">Electrolux</option>
-                                    <option value="Challenger">Challenger</option>
-                                    <option value="Indurama">Indurama</option>
-                                    <option value="Bosch">Bosch</option>
-                                    <option value="Frigidaire">Frigidaire</option>
-                                    <option value="Panasonic">Panasonic</option>
-                                    <option value="Daewoo">Daewoo</option>
-                                  </>
-                                ) : null}
-                                <option value="Otra">Otra</option>
-                              </select>
-                              {correccionData.marca === 'Otra' && (
-                                <Input
-                                  placeholder="Escribir marca"
-                                  value={correccionData.marcaOtra}
-                                  onChange={(e) => setCorreccionData(d => ({ ...d, marcaOtra: e.target.value }))}
-                                  className="h-8 text-xs bg-white"
-                                />
-                              )}
-                              {correccionData.tipo === 'aire_acondicionado' && (
-                                <>
-                                  <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
-                                  <select
-                                    value={correccionData.tecnologia}
-                                    onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
-                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  >
-                                    <option value="">Seleccionar</option>
-                                    <option value="Inverter">Inverter</option>
-                                    <option value="Convencional">Convencional</option>
-                                  </select>
-                                  <label className="text-[11px] font-medium text-slate-500">Capacidad</label>
-                                  <select
-                                    value={correccionData.capacidad}
-                                    onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
-                                    className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  >
-                                    <option value="">Capacidad (BTU)</option>
-                                    <option value="9,000 BTU">9,000 BTU</option>
-                                    <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
-                                    <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
-                                    <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
-                                    <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
-                                    <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
-                                    <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
-                                  </select>
-                                </>
-                              )}
-                            </div>
-                            <Button
-                              className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
-                              onClick={async () => {
-                                if (!id) return;
-                                const tipo = correccionData.tipo;
-                                const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra.trim() : correccionData.marca;
-                                if (!tipo) { toast.error('Selecciona el tipo de equipo'); return; }
-                                if (!marca) { toast.error('Selecciona la marca del equipo'); return; }
-                                const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
-                                try {
-                                  await registrarEquipo(id, { tipo, marca, capacidad: capacidad || undefined });
-                                  toast.success('Equipo registrado correctamente');
-                                  await handleChecklistItem(item.id);
-                                  fetchServicio();
-                                } catch { toast.error('Error registrando el equipo'); }
-                              }}
-                            >
-                              <Check className="h-3.5 w-3.5 mr-1" /> Registrar equipo
-                            </Button>
-                          </div>
-                        )}
-                        {isEquipoItem && tieneFotoAntes && servicio.equipo && !item.completado && (
-                          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                            <p className="text-xs font-semibold text-blue-700">Verifica y completa los datos del equipo:</p>
-                            <div className="space-y-1.5">
-                              <label className="text-[11px] font-medium text-slate-500">Marca</label>
-                              <select
-                                value={correccionData.marca}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, marca: e.target.value, marcaOtra: '' }))}
-                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">Seleccionar marca</option>
-                                {servicio.equipo?.tipo === 'aire_acondicionado' ? (
-                                  <>
-                                    <option value="Samsung">Samsung</option>
-                                    <option value="LG">LG</option>
-                                    <option value="Carrier">Carrier</option>
-                                    <option value="Daikin">Daikin</option>
-                                    <option value="Midea">Midea</option>
-                                    <option value="York">York</option>
-                                    <option value="Trane">Trane</option>
-                                    <option value="Lennox">Lennox</option>
-                                    <option value="Panasonic">Panasonic</option>
-                                    <option value="Gree">Gree</option>
-                                    <option value="Hisense">Hisense</option>
-                                    <option value="TCL">TCL</option>
-                                    <option value="Aux">Aux</option>
-                                    <option value="Whirlpool">Whirlpool</option>
-                                    <option value="Electrolux">Electrolux</option>
-                                  </>
-                                ) : (
-                                  <>
-                                    <option value="Samsung">Samsung</option>
-                                    <option value="LG">LG</option>
-                                    <option value="Whirlpool">Whirlpool</option>
-                                    <option value="Mabe">Mabe</option>
-                                    <option value="Haceb">Haceb</option>
-                                    <option value="Electrolux">Electrolux</option>
-                                    <option value="Challenger">Challenger</option>
-                                    <option value="Indurama">Indurama</option>
-                                    <option value="Bosch">Bosch</option>
-                                    <option value="Frigidaire">Frigidaire</option>
-                                    <option value="Panasonic">Panasonic</option>
-                                    <option value="Daewoo">Daewoo</option>
-                                  </>
-                                )}
-                                <option value="Otra">Otra</option>
-                              </select>
-                              {correccionData.marca === 'Otra' && (
-                                <Input
-                                  placeholder="Escribir marca"
-                                  value={correccionData.marcaOtra}
-                                  onChange={(e) => setCorreccionData(d => ({ ...d, marcaOtra: e.target.value }))}
-                                  className="h-8 text-xs bg-white"
-                                />
-                              )}
-                              <label className="text-[11px] font-medium text-slate-500">Tecnología</label>
-                              <select
-                                value={correccionData.tecnologia}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, tecnologia: e.target.value }))}
-                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">Seleccionar</option>
-                                <option value="Inverter">Inverter</option>
-                                <option value="Convencional">Convencional</option>
-                              </select>
-                              <label className="text-[11px] font-medium text-slate-500">Capacidad</label>
-                              <select
-                                value={correccionData.capacidad}
-                                onChange={(e) => setCorreccionData(d => ({ ...d, capacidad: e.target.value }))}
-                                className="w-full h-8 text-xs bg-white border border-slate-200 rounded-md px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">Capacidad (BTU)</option>
-                                <option value="9,000 BTU">9,000 BTU</option>
-                                <option value="12,000 BTU (1 Ton)">12,000 BTU (1 Ton)</option>
-                                <option value="18,000 BTU (1.5 Ton)">18,000 BTU (1.5 Ton)</option>
-                                <option value="24,000 BTU (2 Ton)">24,000 BTU (2 Ton)</option>
-                                <option value="36,000 BTU (3 Ton)">36,000 BTU (3 Ton)</option>
-                                <option value="48,000 BTU (4 Ton)">48,000 BTU (4 Ton)</option>
-                                <option value="60,000 BTU (5 Ton)">60,000 BTU (5 Ton)</option>
-                              </select>
-                            </div>
-                            <Button
-                              className="w-full h-9 text-xs bg-green-600 hover:bg-green-700"
-                              onClick={async () => {
-                                if (!id) return;
-                                const marca = correccionData.marca === 'Otra' ? correccionData.marcaOtra.trim() : correccionData.marca;
-                                if (!marca) { toast.error('Selecciona la marca del equipo'); return; }
-                                const capacidad = [correccionData.capacidad, correccionData.tecnologia].filter(Boolean).join(' - ');
-                                try {
-                                  await corregirEquipo(id, { marca, capacidad: capacidad || undefined });
-                                  toast.success('Datos del equipo confirmados');
-                                  await handleChecklistItem(item.id);
-                                  fetchServicio();
-                                } catch { toast.error('Error guardando datos'); }
-                              }}
-                            >
-                              <Check className="h-3.5 w-3.5 mr-1" /> Confirmar datos del equipo
-                            </Button>
-                          </div>
-                        )}
-                        {isEquipoItem && item.completado && servicio.equipo && (
-                          <div className="mt-1.5 text-xs rounded-lg p-2 space-y-0.5 bg-green-100 text-green-800">
-                            {servicio.equipo.marca && <p><span className="font-semibold">Marca:</span> {servicio.equipo.marca}</p>}
-                            {servicio.equipo.notas && <p><span className="font-semibold">Capacidad:</span> {servicio.equipo.notas}</p>}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
+              <button
+                className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors"
+                onClick={() => setLlegadaModal(true)}
+              >
+                <span className="text-sm font-semibold text-blue-700">Seleccionar condiciones observadas</span>
+                <span className="text-blue-500 text-lg">＋</span>
+              </button>
+              {llegadaSelecciones.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {llegadaSelecciones.map(s => (
+                    <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-50 border border-blue-200 text-blue-700">
+                      {s}
+                      <button onClick={() => setLlegadaSelecciones(prev => prev.filter(x => x !== s))}><X className="h-3 w-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <Button className="w-full min-h-12" onClick={() => setPasoActual(2)}
-              disabled={!itemsPorCat('llegada').every(i => i.completado)}>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Observaciones de llegada</label>
+              <Textarea
+                placeholder="Estado del equipo, condiciones del lugar, lo que reporta el cliente..."
+                value={observacionesLlegada}
+                onChange={e => setObservacionesLlegada(e.target.value)}
+                rows={3}
+                className="bg-slate-50 border-slate-200"
+              />
+            </div>
+
+            <Button className="w-full min-h-12" onClick={() => setPasoActual(2)}>
               Continuar al diagnóstico <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </CardContent>
@@ -998,8 +758,7 @@ export const ServicioActivo = () => {
               />
             </div>
 
-            <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}
-              disabled={!itemsPorCat('diagnostico').every(i => i.completado)}>
+            <Button className="w-full min-h-12" onClick={() => setPasoActual(3)}>
               Continuar a cotización <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </CardContent>
@@ -1210,26 +969,26 @@ export const ServicioActivo = () => {
 
             {renderFotos('durante', 'Fotos de la reparación')}
 
-            {itemsPorCat('reparacion').length > 0 && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-700">Verificación</p>
-                {itemsPorCat('reparacion').map(item => (
-                  <button
-                    key={item.id}
-                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left min-h-12 transition-colors ${
-                      item.completado ? 'bg-green-50 border-green-200' : 'hover:bg-slate-50'
-                    }`}
-                    onClick={() => !item.completado && handleChecklistItem(item.id)}
-                    disabled={item.completado}
-                  >
-                    <CheckCircle className={`h-6 w-6 shrink-0 ${item.completado ? 'text-green-500' : 'text-gray-300'}`} />
-                    <span className={`text-sm font-medium ${item.completado ? 'line-through text-muted-foreground' : 'text-slate-700'}`}>
-                      {item.descripcion}
+            {/* Selector de trabajos realizados */}
+            <div className="space-y-2">
+              <button
+                className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors"
+                onClick={() => setRepModal(true)}
+              >
+                <span className="text-sm font-semibold text-blue-700">Seleccionar trabajos realizados</span>
+                <span className="text-blue-500 text-lg">＋</span>
+              </button>
+              {repSelecciones.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {repSelecciones.map(s => (
+                    <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 border border-emerald-200 text-emerald-700">
+                      {s}
+                      <button onClick={() => setRepSelecciones(prev => prev.filter(x => x !== s))}><X className="h-3 w-3" /></button>
                     </span>
-                  </button>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">Observaciones de la reparación</label>
@@ -1242,8 +1001,7 @@ export const ServicioActivo = () => {
               />
             </div>
 
-            <Button className="w-full min-h-12" onClick={() => setPasoActual(5)}
-              disabled={!itemsPorCat('reparacion').every(i => i.completado)}>
+            <Button className="w-full min-h-12" onClick={() => setPasoActual(5)}>
               Continuar al cierre <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </CardContent>
@@ -1321,6 +1079,122 @@ export const ServicioActivo = () => {
           <Phone className="h-6 w-6 text-white" />
         </a>
       )}
+
+      {/* Modal llegada — condiciones observadas */}
+      {llegadaModal && (() => {
+        const opciones = [
+          'Equipo en buen estado físico', 'Equipo con golpes / daños físicos', 'Instalación correcta',
+          'Instalación deficiente', 'Voltaje verificado OK', 'Voltaje fuera de rango',
+          'Filtros sucios / obstruidos', 'Área de trabajo limpia', 'Área con suciedad excesiva',
+          'Drenaje obstruido', 'Ruidos anormales al encender', 'Sin ruidos anormales',
+          'Cliente describe falla claramente', 'Falla intermitente', 'Falla constante',
+          'Equipo no enciende', 'Equipo enciende con dificultad', 'Acceso limitado al equipo',
+        ];
+        const confirmar = () => {
+          if (llegadaSelecciones.length > 0) {
+            const texto = llegadaSelecciones.join(', ');
+            setObservacionesLlegada(prev => prev ? `${prev}\nCondiciones: ${texto}` : `Condiciones: ${texto}`);
+          }
+          setLlegadaModal(false);
+          setLlegadaSelecciones([]);
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => { setLlegadaModal(false); setLlegadaSelecciones([]); }}>
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b">
+                <h3 className="font-bold text-base text-slate-800">Condiciones observadas en llegada</h3>
+                <button onClick={() => { setLlegadaModal(false); setLlegadaSelecciones([]); }} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="p-5 max-h-72 overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {opciones.map(op => {
+                    const sel = llegadaSelecciones.includes(op);
+                    return (
+                      <button key={op} className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-colors ${sel ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'}`}
+                        onClick={() => setLlegadaSelecciones(prev => sel ? prev.filter(x => x !== op) : [...prev, op])}>
+                        {sel ? '✓ ' : ''}{op}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-4 border-t">
+                <Button className="w-full min-h-11" onClick={confirmar} disabled={llegadaSelecciones.length === 0}>
+                  Agregar {llegadaSelecciones.length > 0 ? `(${llegadaSelecciones.length})` : ''} a observaciones
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal reparación — trabajos realizados */}
+      {repModal && (() => {
+        const opcionesPorTipo: Record<string, string[]> = {
+          aire_acondicionado: [
+            'Limpieza de filtros', 'Limpieza de evaporador', 'Limpieza de condensador',
+            'Recarga de gas refrigerante', 'Cambio de capacitor', 'Cambio de contactor',
+            'Cambio de motor ventilador', 'Cambio de tarjeta electrónica', 'Cambio de sensor',
+            'Desobstrucción de drenaje', 'Cambio de válvula de expansión', 'Soldadura en tubería',
+            'Cambio de compresor', 'Ajuste eléctrico / cableado', 'Prueba de funcionamiento OK',
+            'Equipo operando con normalidad',
+          ],
+          nevera: [
+            'Limpieza general', 'Cambio de selladura', 'Recarga de gas',
+            'Cambio de compresor', 'Cambio de termostato', 'Cambio de timer deshielo',
+            'Cambio de resistencia deshielo', 'Cambio de motor ventilador', 'Cambio de tarjeta electrónica',
+            'Desobstrucción de drenaje', 'Ajuste eléctrico', 'Soldadura en tubería',
+            'Prueba de funcionamiento OK', 'Equipo operando con normalidad',
+          ],
+          otro: [
+            'Limpieza general', 'Cambio de componente eléctrico', 'Ajuste mecánico',
+            'Cambio de motor', 'Cambio de tarjeta electrónica', 'Soldadura',
+            'Ajuste eléctrico / cableado', 'Prueba de funcionamiento OK', 'Equipo operando con normalidad',
+          ],
+        };
+        const tipo = servicio.equipo?.tipo || 'otro';
+        const opciones = opcionesPorTipo[tipo] ?? opcionesPorTipo.otro;
+        const confirmar = () => {
+          if (repSelecciones.length > 0) {
+            const texto = repSelecciones.join(', ');
+            setObservacionesRep(prev => prev ? `${prev}\nTrabajos: ${texto}` : `Trabajos: ${texto}`);
+          }
+          setRepModal(false);
+          setRepSelecciones([]);
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => { setRepModal(false); setRepSelecciones([]); }}>
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-5 border-b">
+                <h3 className="font-bold text-base text-slate-800">Trabajos realizados</h3>
+                <button onClick={() => { setRepModal(false); setRepSelecciones([]); }} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="p-5 max-h-72 overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {opciones.map(op => {
+                    const sel = repSelecciones.includes(op);
+                    return (
+                      <button key={op} className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-colors ${sel ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700'}`}
+                        onClick={() => setRepSelecciones(prev => sel ? prev.filter(x => x !== op) : [...prev, op])}>
+                        {sel ? '✓ ' : ''}{op}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-4 border-t">
+                <Button className="w-full min-h-11" onClick={confirmar} disabled={repSelecciones.length === 0}>
+                  Agregar {repSelecciones.length > 0 ? `(${repSelecciones.length})` : ''} a observaciones
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal diagnóstico — errores típicos por tipo de equipo */}
       {diagModal && (() => {
