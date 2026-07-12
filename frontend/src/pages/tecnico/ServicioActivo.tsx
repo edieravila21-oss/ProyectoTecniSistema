@@ -23,7 +23,7 @@ import type { Servicio, MetodoPago } from '@/types';
 import {
   Phone, MapPin, Camera, Check, WifiOff,
   Trash2, Download, Pen, ArrowLeft, ArrowRight, PartyPopper, History,
-  User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle, ImageIcon,
+  User, Clock, DollarSign, Star, Plus, X, PauseCircle, PlayCircle, ImageIcon, RotateCcw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import SignatureCanvas from 'react-signature-canvas';
@@ -46,6 +46,8 @@ export const ServicioActivo = () => {
   const initialLoadDone = useRef(false);
   const isOffline = useOfflineStatus();
   const [uploadingTipos, setUploadingTipos] = useState<Set<string>>(new Set());
+  const [uploadProgressMap, setUploadProgressMap] = useState<Record<string, number>>({});
+  const [fotosFallidas, setFotosFallidas] = useState<Record<string, { blob: Blob; tipo: 'antes' | 'durante' | 'despues' }>>({});
   const [deletingFotos, setDeletingFotos] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [observacionesDiag, setObservacionesDiag] = useState('');
@@ -231,6 +233,45 @@ export const ServicioActivo = () => {
     finally { setSaving(false); }
   };
 
+  const comprimirImagen = (file: File): Promise<Blob> =>
+    new Promise(resolve => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const maxPx = 1200;
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => resolve(blob ?? new Blob()), 'image/jpeg', 0.8);
+      };
+      img.src = objectUrl;
+    });
+
+  const uploadFotoBlob = async (tipo: 'antes' | 'durante' | 'despues', blob: Blob) => {
+    if (!id) return;
+    setUploadingTipos(prev => new Set(prev).add(tipo));
+    setUploadProgressMap(prev => ({ ...prev, [tipo]: 0 }));
+    try {
+      const formData = new FormData();
+      formData.append('foto', blob, 'foto.jpg');
+      formData.append('tipo', tipo);
+      await subirFoto(id, formData, (pct) => {
+        setUploadProgressMap(prev => ({ ...prev, [tipo]: pct }));
+      });
+      setFotosFallidas(prev => { const n = { ...prev }; delete n[tipo]; return n; });
+      fetchServicio();
+    } catch {
+      setFotosFallidas(prev => ({ ...prev, [tipo]: { blob, tipo } }));
+      toast.error('Error subiendo foto — toca Reintentar');
+    } finally {
+      setUploadingTipos(prev => { const s = new Set(prev); s.delete(tipo); return s; });
+      setUploadProgressMap(prev => { const n = { ...prev }; delete n[tipo]; return n; });
+    }
+  };
+
   const handleSubirFoto = (tipo: 'antes' | 'durante' | 'despues', source: 'camera' | 'gallery' = 'camera') => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -240,31 +281,29 @@ export const ServicioActivo = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file || !id) return;
 
+      const blob = await comprimirImagen(file);
+
       if (!navigator.onLine) {
-        const localUrl = URL.createObjectURL(file);
+        const localUrl = URL.createObjectURL(blob);
         const fakeId = `local-${Date.now()}`;
         setServicio(prev => prev ? {
           ...prev,
           fotos: [...(prev.fotos || []), { id: fakeId, servicioId: id, url: localUrl, tipo, subida_at: new Date().toISOString() }],
         } : prev);
-        await enqueueFoto(id, tipo, file, localUrl).catch(() => {});
+        await enqueueFoto(id, tipo, new File([blob], file.name, { type: 'image/jpeg' }), localUrl).catch(() => {});
         toast.success('📷 Foto guardada localmente — se subirá al recuperar internet');
         return;
       }
 
-      setUploadingTipos(prev => new Set(prev).add(tipo));
-      toast.success('📷 Foto tomada, subiendo en segundo plano...');
-
-      try {
-        const formData = new FormData();
-        formData.append('foto', file);
-        formData.append('tipo', tipo);
-        await subirFoto(id, formData);
-        fetchServicio();
-      } catch { toast.error('Error subiendo foto, intenta de nuevo'); }
-      finally { setUploadingTipos(prev => { const s = new Set(prev); s.delete(tipo); return s; }); }
+      await uploadFotoBlob(tipo, blob);
     };
     input.click();
+  };
+
+  const handleReintentarFoto = (tipo: 'antes' | 'durante' | 'despues') => {
+    const fallida = fotosFallidas[tipo];
+    if (!fallida) return;
+    uploadFotoBlob(tipo, fallida.blob);
   };
 
   const handleEliminarFoto = async (fotoId: string) => {
@@ -353,6 +392,9 @@ export const ServicioActivo = () => {
   const renderFotos = (tipo: 'antes' | 'durante' | 'despues', label: string) => {
     const fotos = servicio.fotos?.filter(f => f.tipo === tipo) || [];
     const max = 4;
+    const isUploading = uploadingTipos.has(tipo);
+    const progress = uploadProgressMap[tipo];
+    const hasFailed = !!fotosFallidas[tipo];
     return (
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -374,13 +416,33 @@ export const ServicioActivo = () => {
             </div>
           ))}
         </div>
-        {fotos.length < max && (
+        {isUploading && (
+          <div className="mb-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-blue-600 font-medium">Subiendo...</span>
+              <span className="text-xs text-blue-600">{progress ?? 0}%</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-1.5">
+              <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-200" style={{ width: `${progress ?? 0}%` }} />
+            </div>
+          </div>
+        )}
+        {hasFailed && (
+          <button
+            disabled={isUploading}
+            onClick={() => handleReintentarFoto(tipo)}
+            className="w-full mb-2 py-2 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm font-medium flex items-center justify-center gap-2 hover:bg-red-100 transition-colors disabled:opacity-50"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reintentar subida
+          </button>
+        )}
+        {fotos.length < max && !hasFailed && (
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto(tipo, 'camera')}>
+            <Button variant="outline" className="w-full min-h-12" disabled={isUploading} onClick={() => handleSubirFoto(tipo, 'camera')}>
               <Camera className="h-4 w-4 mr-2" />
-              {uploadingTipos.has(tipo) ? 'Subiendo...' : 'Tomar foto'}
+              {isUploading ? `${progress ?? 0}%` : 'Tomar foto'}
             </Button>
-            <Button variant="outline" className="w-full min-h-12" onClick={() => handleSubirFoto(tipo, 'gallery')}>
+            <Button variant="outline" className="w-full min-h-12" disabled={isUploading} onClick={() => handleSubirFoto(tipo, 'gallery')}>
               <ImageIcon className="h-4 w-4 mr-2" />
               Galería
             </Button>

@@ -25,9 +25,18 @@ export const getChecklist = (servicioId: string) =>
 export const marcarChecklistItem = (servicioId: string, itemId: string) =>
   api.patch<ApiResponse<ChecklistItem>>(`/servicios/${servicioId}/checklist/${itemId}`);
 
-export const subirFoto = (servicioId: string, formData: FormData) =>
+export const subirFoto = (
+  servicioId: string,
+  formData: FormData,
+  onUploadProgress?: (pct: number) => void
+) =>
   api.post<ApiResponse<{ url: string }>>(`/servicios/${servicioId}/fotos`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    ...(onUploadProgress && {
+      onUploadProgress: (e: { loaded: number; total?: number }) => {
+        if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100));
+      },
+    }),
   });
 
 export const guardarFirma = (servicioId: string, firma_base64: string) =>
