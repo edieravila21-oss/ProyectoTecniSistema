@@ -460,24 +460,6 @@ const cambiarEstado = async (req, res, next) => {
     }
 
     if (estado === 'completado') {
-      const pendientes = servicio.checklist.filter(c => !c.completado);
-      if (pendientes.length > 0) {
-        return res.status(400).json({
-          success: false,
-          error: `Faltan ${pendientes.length} items del checklist por completar`,
-          code: 'CHECKLIST_INCOMPLETO',
-          data: { pendientes: pendientes.map(p => p.descripcion) },
-        });
-      }
-
-      const tieneFotoDespues = servicio.fotos.some(f => f.tipo === 'despues');
-      if (!tieneFotoDespues) {
-        return res.status(400).json({
-          success: false,
-          error: 'Se requiere al menos una foto "después" para cerrar el servicio',
-          code: 'FOTO_REQUERIDA',
-        });
-      }
 
       if (!servicio.firma) {
         return res.status(400).json({
