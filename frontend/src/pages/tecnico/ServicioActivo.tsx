@@ -739,32 +739,32 @@ export const ServicioActivo = () => {
               {repuestos.length > 0 && (
                 <div className="space-y-1">
                   {repuestos.map((r, idx) => (
-                    <div key={idx} className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 min-w-0">
-                      <p className="text-xs font-medium text-slate-700 flex-1 min-w-0 truncate">{r.nombre}</p>
-                      <div className="flex items-center gap-0.5 shrink-0">
+                    <div key={idx} className="bg-slate-50 rounded-md px-2 py-1 border border-slate-100">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <p className="text-xs font-medium text-slate-700 truncate">{r.nombre}</p>
                         <button
-                          className="h-6 w-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-xs font-bold"
-                          onClick={() => { if (r.cantidad > 1) { const c = [...repuestos]; c[idx] = { ...c[idx], cantidad: c[idx].cantidad - 1 }; setRepuestos(c); } }}
-                        >−</button>
-                        <span className="text-xs font-bold w-5 text-center text-slate-700">{r.cantidad}</span>
-                        <button
-                          className="h-6 w-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-xs font-bold"
-                          onClick={() => { const c = [...repuestos]; c[idx] = { ...c[idx], cantidad: c[idx].cantidad + 1 }; setRepuestos(c); }}
-                        >+</button>
+                          className="h-5 w-5 rounded flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                          onClick={() => setRepuestos(repuestos.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                       </div>
-                      <Input
-                        type="number"
-                        value={r.precio_unitario || ''}
-                        onChange={(e) => { const c = [...repuestos]; c[idx] = { ...c[idx], precio_unitario: parseFloat(e.target.value) || 0 }; setRepuestos(c); }}
-                        className="h-6 w-20 min-w-0 text-xs text-right shrink-0"
-                        placeholder="$"
-                      />
-                      <button
-                        className="h-6 w-6 rounded-md hover:bg-red-50 flex items-center justify-center text-red-400 hover:text-red-600 shrink-0"
-                        onClick={() => setRepuestos(repuestos.filter((_, i) => i !== idx))}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button className="h-5 w-5 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-xs font-bold"
+                            onClick={() => { if (r.cantidad > 1) { const c = [...repuestos]; c[idx] = { ...c[idx], cantidad: c[idx].cantidad - 1 }; setRepuestos(c); } }}>−</button>
+                          <span className="text-xs font-bold w-5 text-center text-slate-700">{r.cantidad}</span>
+                          <button className="h-5 w-5 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-xs font-bold"
+                            onClick={() => { const c = [...repuestos]; c[idx] = { ...c[idx], cantidad: c[idx].cantidad + 1 }; setRepuestos(c); }}>+</button>
+                        </div>
+                        <Input
+                          type="number"
+                          value={r.precio_unitario || ''}
+                          onChange={(e) => { const c = [...repuestos]; c[idx] = { ...c[idx], precio_unitario: parseFloat(e.target.value) || 0 }; setRepuestos(c); }}
+                          className="h-5 flex-1 text-xs text-right"
+                          placeholder="precio"
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
