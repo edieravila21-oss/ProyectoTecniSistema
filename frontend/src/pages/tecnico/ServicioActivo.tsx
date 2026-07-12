@@ -9,6 +9,8 @@ import { cacheServicio, getCachedServicio, enqueueFoto } from '@/lib/offlineDb';
 import { processSyncQueue } from '@/lib/syncManager';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { getHistorialCliente } from '@/api/clientes';
+import { buscarProductos } from '@/api/externos';
+import type { ProductoPuntoVenta } from '@/api/externos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -34,38 +36,6 @@ interface HistorialCliente {
 
 const pasos = ['En camino', 'Llegada', 'Diagnóstico', 'Cotización', 'Reparación', 'Cierre'];
 
-const repuestosComunes: Record<string, { nombre: string; precio: number }[]> = {
-  aire_acondicionado: [
-    { nombre: 'Capacitor', precio: 25000 },
-    { nombre: 'Contactor', precio: 35000 },
-    { nombre: 'Gas R-410A (lb)', precio: 45000 },
-    { nombre: 'Gas R-22 (lb)', precio: 35000 },
-    { nombre: 'Motor ventilador', precio: 85000 },
-    { nombre: 'Tarjeta electrónica', precio: 120000 },
-    { nombre: 'Filtro', precio: 15000 },
-    { nombre: 'Sensor temperatura', precio: 20000 },
-    { nombre: 'Válvula expansión', precio: 65000 },
-  ],
-  nevera: [
-    { nombre: 'Gas R-134a', precio: 35000 },
-    { nombre: 'Gas R-600a', precio: 40000 },
-    { nombre: 'Compresor', precio: 180000 },
-    { nombre: 'Termostato', precio: 25000 },
-    { nombre: 'Motor ventilador', precio: 45000 },
-    { nombre: 'Resistencia deshielo', precio: 30000 },
-    { nombre: 'Timer deshielo', precio: 35000 },
-    { nombre: 'Tarjeta electrónica', precio: 80000 },
-    { nombre: 'Sello puerta', precio: 40000 },
-    { nombre: 'Sensor temperatura', precio: 20000 },
-  ],
-  otro: [
-    { nombre: 'Repuesto genérico', precio: 0 },
-    { nombre: 'Tarjeta electrónica', precio: 80000 },
-    { nombre: 'Motor', precio: 60000 },
-    { nombre: 'Sensor', precio: 20000 },
-    { nombre: 'Cable/conector', precio: 10000 },
-  ],
-};
 
 export const ServicioActivo = () => {
   const { id } = useParams<{ id: string }>();
@@ -92,6 +62,10 @@ export const ServicioActivo = () => {
   const [repuestos, setRepuestos] = useState<{ nombre: string; cantidad: number; precio_unitario: number }[]>([]);
   const [showCustomRepuesto, setShowCustomRepuesto] = useState(false);
   const [customRepuestoNombre, setCustomRepuestoNombre] = useState('');
+  const [busquedaProducto, setBusquedaProducto] = useState('');
+  const [resultadosBusqueda, setResultadosBusqueda] = useState<ProductoPuntoVenta[]>([]);
+  const [buscandoProducto, setBuscandoProducto] = useState(false);
+  const busquedaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [modalPausa, setModalPausa] = useState(false);
   const [notaPausa, setNotaPausa] = useState('');
   const [fechaReanudacion, setFechaReanudacion] = useState('');
@@ -714,26 +688,54 @@ export const ServicioActivo = () => {
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
-                {(repuestosComunes[servicio.equipo?.tipo || 'otro'] || repuestosComunes.otro).map(rc => {
-                  const added = repuestos.some(r => r.nombre === rc.nombre);
-                  return (
-                    <button
-                      key={rc.nombre}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                        added
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
-                      }`}
-                      onClick={() => {
-                        if (!added) setRepuestos(prev => [...prev, { nombre: rc.nombre, cantidad: 1, precio_unitario: rc.precio }]);
-                      }}
-                      disabled={added}
-                    >
-                      {added ? '✓ ' : '+ '}{rc.nombre}
-                    </button>
-                  );
-                })}
+              {/* Buscador de productos del punto de venta */}
+              <div className="relative">
+                <Input
+                  placeholder="Buscar repuesto en inventario..."
+                  value={busquedaProducto}
+                  onChange={e => {
+                    const q = e.target.value;
+                    setBusquedaProducto(q);
+                    if (busquedaTimer.current) clearTimeout(busquedaTimer.current);
+                    if (!q.trim()) { setResultadosBusqueda([]); return; }
+                    setBuscandoProducto(true);
+                    busquedaTimer.current = setTimeout(async () => {
+                      try {
+                        const res = await buscarProductos(q);
+                        setResultadosBusqueda(res.data.data);
+                      } catch { setResultadosBusqueda([]); }
+                      finally { setBuscandoProducto(false); }
+                    }, 350);
+                  }}
+                  className="h-8 text-sm pr-8"
+                />
+                {buscandoProducto && (
+                  <span className="absolute right-2 top-2 text-slate-400 text-xs">...</span>
+                )}
+                {resultadosBusqueda.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 top-9 bg-white border border-slate-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
+                    {resultadosBusqueda.map(p => {
+                      const added = repuestos.some(r => r.nombre === p.nombre);
+                      return (
+                        <button
+                          key={p.id}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors ${added ? 'opacity-50' : ''}`}
+                          disabled={added}
+                          onClick={() => {
+                            if (!added) setRepuestos(prev => [...prev, { nombre: p.nombre, cantidad: 1, precio_unitario: p.precio }]);
+                            setBusquedaProducto('');
+                            setResultadosBusqueda([]);
+                          }}
+                        >
+                          <span className="font-medium text-slate-700 truncate flex-1">{p.nombre}</span>
+                          <span className="text-xs text-emerald-600 font-bold ml-2 shrink-0">
+                            {p.precio > 0 ? formatCurrency(p.precio) : 'Sin precio'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {repuestos.length > 0 && (

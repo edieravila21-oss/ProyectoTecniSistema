@@ -45,6 +45,7 @@ app.use('/api/configuracion', require('./src/routes/configuracion'));
 app.use('/api/calendario', require('./src/routes/calendario'));
 app.use('/api/push', require('./src/routes/push'));
 app.use('/api/catalogo-servicios', require('./src/routes/catalogoServicios'));
+app.use('/api/externos', require('./src/routes/externos'));
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date() } });
