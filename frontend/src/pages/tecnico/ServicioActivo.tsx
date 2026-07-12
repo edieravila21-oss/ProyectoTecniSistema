@@ -53,6 +53,9 @@ export const ServicioActivo = () => {
   const [costoServicio, setCostoServicio] = useState('');
   const [valorFinal, setValorFinal] = useState('');
   const [metodoPago, setMetodoPago] = useState('efectivo');
+  const [showRechazo, setShowRechazo] = useState(false);
+  const [costoDiagnostico, setCostoDiagnostico] = useState('');
+  const [metodoPagoDiag, setMetodoPagoDiag] = useState('efectivo');
   const [showExito, setShowExito] = useState(false);
   const sigRef = useRef<SignatureCanvas>(null);
   const [firmada, setFirmada] = useState(false);
@@ -207,6 +210,24 @@ export const ServicioActivo = () => {
       toast.success('Cotización aceptada — procedemos con la reparación');
       setPasoActual(4);
     } catch { toast.error('Error guardando cotización'); }
+    finally { setSaving(false); }
+  };
+
+  const handleClienteRechaza = async () => {
+    if (!id) return;
+    const costo = parseFloat(costoDiagnostico) || 0;
+    setSaving(true);
+    try {
+      await actualizarServicio(id, {
+        valor_final: costo || undefined,
+        metodo_pago: metodoPagoDiag as MetodoPago,
+        notas_tecnico: `Cliente rechazó cotización. Cobro solo diagnóstico: ${costo ? formatCurrency(costo) : 'sin costo'}.`,
+      });
+      if (costo) setValorFinal(String(costo));
+      toast.success('Registrado — continúa al cierre para obtener la firma');
+      setShowRechazo(false);
+      setPasoActual(5);
+    } catch { toast.error('Error guardando'); }
     finally { setSaving(false); }
   };
 
@@ -897,6 +918,53 @@ export const ServicioActivo = () => {
               <Check className="h-5 w-5 mr-2" />
               {saving ? 'Guardando...' : 'Cliente acepta — iniciar reparación'}
             </Button>
+
+            {/* Rechazo de cotización */}
+            {!showRechazo ? (
+              <button
+                className="w-full py-2.5 rounded-xl border border-slate-200 text-sm text-slate-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                onClick={() => setShowRechazo(true)}
+              >
+                Cliente no acepta — cobrar solo diagnóstico
+              </button>
+            ) : (
+              <div className="border border-red-200 rounded-xl p-3 space-y-3 bg-red-50">
+                <p className="text-sm font-semibold text-red-700">Cobro por diagnóstico</p>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-600">Costo del diagnóstico</label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={costoDiagnostico}
+                    onChange={e => setCostoDiagnostico(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-600">Método de pago</label>
+                  <Select value={metodoPagoDiag} onChange={e => setMetodoPagoDiag(e.target.value)}>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="link_pago">Link de pago</option>
+                  </Select>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+                    onClick={() => setShowRechazo(false)}
+                  >
+                    Cancelar
+                  </button>
+                  <Button
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                    onClick={handleClienteRechaza}
+                    disabled={saving}
+                  >
+                    {saving ? 'Guardando...' : 'Confirmar y cerrar'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
