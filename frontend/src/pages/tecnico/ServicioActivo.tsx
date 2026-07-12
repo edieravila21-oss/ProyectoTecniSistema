@@ -739,8 +739,8 @@ export const ServicioActivo = () => {
               {repuestos.length > 0 && (
                 <div className="space-y-1">
                   {repuestos.map((r, idx) => (
-                    <div key={idx} className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100">
-                      <p className="text-xs font-medium text-slate-700 flex-1 truncate">{r.nombre}</p>
+                    <div key={idx} className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 min-w-0">
+                      <p className="text-xs font-medium text-slate-700 flex-1 min-w-0 truncate">{r.nombre}</p>
                       <div className="flex items-center gap-0.5 shrink-0">
                         <button
                           className="h-6 w-6 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 text-xs font-bold"
@@ -756,7 +756,7 @@ export const ServicioActivo = () => {
                         type="number"
                         value={r.precio_unitario || ''}
                         onChange={(e) => { const c = [...repuestos]; c[idx] = { ...c[idx], precio_unitario: parseFloat(e.target.value) || 0 }; setRepuestos(c); }}
-                        className="h-6 w-24 text-xs text-right shrink-0"
+                        className="h-6 w-20 min-w-0 text-xs text-right shrink-0"
                         placeholder="$"
                       />
                       <button
