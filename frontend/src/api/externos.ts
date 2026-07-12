@@ -10,3 +10,6 @@ export interface ProductoPuntoVenta {
 
 export const buscarProductos = (q: string) =>
   api.get<{ success: boolean; data: ProductoPuntoVenta[] }>('/externos/productos', { params: { q } });
+
+export const getProductosComunes = () =>
+  api.get<{ success: boolean; data: ProductoPuntoVenta[] }>('/externos/productos/comunes');

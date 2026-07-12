@@ -9,7 +9,7 @@ import { cacheServicio, getCachedServicio, enqueueFoto } from '@/lib/offlineDb';
 import { processSyncQueue } from '@/lib/syncManager';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { getHistorialCliente } from '@/api/clientes';
-import { buscarProductos } from '@/api/externos';
+import { buscarProductos, getProductosComunes } from '@/api/externos';
 import type { ProductoPuntoVenta } from '@/api/externos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,6 +65,7 @@ export const ServicioActivo = () => {
   const [busquedaProducto, setBusquedaProducto] = useState('');
   const [resultadosBusqueda, setResultadosBusqueda] = useState<ProductoPuntoVenta[]>([]);
   const [buscandoProducto, setBuscandoProducto] = useState(false);
+  const [productosComunes, setProductosComunes] = useState<ProductoPuntoVenta[]>([]);
   const busquedaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [modalPausa, setModalPausa] = useState(false);
   const [notaPausa, setNotaPausa] = useState('');
@@ -144,6 +145,15 @@ export const ServicioActivo = () => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicio?.equipoId, servicio?.clienteId]);
+
+  useEffect(() => {
+    if (pasoActual === 3 && productosComunes.length === 0) {
+      getProductosComunes()
+        .then(r => setProductosComunes(r.data.data))
+        .catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasoActual]);
 
   const handleCambiarEstado = async (estado: string) => {
     if (!id) return;
@@ -687,6 +697,27 @@ export const ServicioActivo = () => {
                   </span>
                 )}
               </div>
+
+              {/* Chips — 6 más vendidos */}
+              {productosComunes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {productosComunes.map(p => {
+                    const added = repuestos.some(r => r.nombre === p.nombre);
+                    return (
+                      <button
+                        key={p.id}
+                        disabled={added}
+                        onClick={() => { if (!added) setRepuestos(prev => [...prev, { nombre: p.nombre, cantidad: 1, precio_unitario: p.precio }]); }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                          added ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
+                        }`}
+                      >
+                        {added ? '✓ ' : '+ '}{p.nombre}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Buscador de productos del punto de venta */}
               <div className="relative">
