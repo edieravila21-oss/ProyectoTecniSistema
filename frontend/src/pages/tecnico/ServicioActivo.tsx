@@ -700,14 +700,13 @@ export const ServicioActivo = () => {
           <button onClick={() => setPasoActual(2)} className="absolute top-3 left-3 h-8 w-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors z-10">
             <ArrowLeft className="h-4 w-4 text-slate-600" />
           </button>
-          <CardContent className="p-4 pt-3 space-y-4">
-            <h2 className="font-bold text-lg text-center">Cotización</h2>
-            <p className="text-sm text-slate-500 text-center -mt-2">Presenta los costos al cliente antes de iniciar la reparación</p>
+          <CardContent className="p-3 pt-2 space-y-3">
+            <h2 className="font-bold text-base text-center">Cotización</h2>
 
             {/* Insumos / Repuestos */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Insumos / Repuestos</p>
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Insumos / Repuestos</p>
                 {repuestos.length > 0 && (
                   <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                     {formatCurrency(repuestos.reduce((sum, r) => sum + r.cantidad * r.precio_unitario, 0))}
@@ -738,9 +737,9 @@ export const ServicioActivo = () => {
               </div>
 
               {repuestos.length > 0 && (
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {repuestos.map((r, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 border border-slate-100">
+                    <div key={idx} className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100">
                       <p className="text-xs font-medium text-slate-700 flex-1 truncate">{r.nombre}</p>
                       <div className="flex items-center gap-0.5 shrink-0">
                         <button
