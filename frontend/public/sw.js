@@ -1,5 +1,5 @@
 // ─── OFFLINE CACHING ───────────────────────────────────────────────────────
-const CACHE_SHELL = 'refri-shell-v1';
+const CACHE_SHELL = 'refri-shell-v2';
 const CACHE_API   = 'refri-api-v1';
 const CACHE_IMG   = 'refri-img-v1';
 
@@ -38,10 +38,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigation → always serve app shell so SPA routes work offline
+  // Navigation → network-first so new deploys show on normal refresh;
+  // fall back to cached shell only when offline
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/index.html').then((r) => r || fetch(request))
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_SHELL).then((cache) => cache.put('/index.html', clone));
+          return response;
+        })
+        .catch(() => caches.match('/index.html').then((r) => r || fetch(request)))
     );
     return;
   }
