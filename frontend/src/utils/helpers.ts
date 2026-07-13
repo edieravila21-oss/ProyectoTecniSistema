@@ -29,6 +29,7 @@ export const estadoConfig: Record<string, { label: string; color: string; bg: st
   en_servicio: { label: 'En servicio', color: 'text-orange-700', bg: 'bg-orange-100' },
   pausado: { label: 'Pausado', color: 'text-amber-700', bg: 'bg-amber-100' },
   completado: { label: 'Completado', color: 'text-green-700', bg: 'bg-green-100' },
+  sin_factura: { label: 'Pend. factura', color: 'text-orange-700', bg: 'bg-orange-100' },
   cancelado: { label: 'Cancelado', color: 'text-red-700', bg: 'bg-red-100' },
 };
 

@@ -333,12 +333,7 @@ export const Servicios = () => {
                       <td className="py-3.5 px-4 hidden sm:table-cell">{s.tecnico?.nombre || <span className="text-amber-500 text-xs font-medium">Sin asignar</span>}</td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <EstadoBadge estado={s.estado} />
-                          {s.estado === 'completado' && !s.factura_url && (
-                            <span title="Factura pendiente" className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-orange-100 text-orange-500 shrink-0">
-                              <FileText className="h-3 w-3" />
-                            </span>
-                          )}
+                          <EstadoBadge estado={s.estado === 'completado' && !s.factura_url ? 'sin_factura' : s.estado} />
                           {s.sla_ejecucion?.excedido && (
                             <span title={`Excedió SLA: ${s.sla_ejecucion.real_min} min (máx. ${s.sla_ejecucion.max_min} min)`} className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-red-100 text-red-500 shrink-0">
                               <AlertTriangle className="h-3 w-3" />
@@ -434,7 +429,7 @@ export const Servicios = () => {
                     <div className="space-y-4 p-4">
                       {/* Estado + acciones */}
                       <div className="flex items-center justify-between">
-                        <EstadoBadge estado={selected.estado} />
+                        <EstadoBadge estado={selected.estado === 'completado' && !selected.factura_url ? 'sin_factura' : selected.estado} />
                         <div className="flex gap-1.5">
                           {canEdit && !editando && (
                             <Button size="sm" variant="outline" className="rounded-xl gap-1" onClick={() => startEdit(selected)}>
