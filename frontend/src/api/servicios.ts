@@ -59,6 +59,27 @@ export const eliminarServicio = (id: string) =>
 export const eliminarFoto = (servicioId: string, fotoId: string) =>
   api.delete<ApiResponse<unknown>>(`/servicios/${servicioId}/fotos/${fotoId}`);
 
+export const subirFactura = (
+  servicioId: string,
+  formData: FormData,
+  onUploadProgress?: (pct: number) => void
+) =>
+  api.post<ApiResponse<{ factura_url: string; factura_subida_at: string }>>(
+    `/servicios/${servicioId}/factura`,
+    formData,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      ...(onUploadProgress && {
+        onUploadProgress: (e: { loaded: number; total?: number }) => {
+          if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100));
+        },
+      }),
+    }
+  );
+
+export const eliminarFactura = (servicioId: string) =>
+  api.delete<ApiResponse<unknown>>(`/servicios/${servicioId}/factura`);
+
 export const corregirEquipo = (servicioId: string, data: { marca?: string; modelo?: string; serial?: string; capacidad?: string }) =>
   api.patch<ApiResponse<unknown>>(`/servicios/${servicioId}/equipo`, data);
 

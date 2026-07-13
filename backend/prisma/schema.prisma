@@ -228,6 +228,8 @@ model Servicio {
   falla_confirmada    Boolean?
   diagnostico_final   String?
   repuestos           Json?
+  factura_url         String?
+  factura_subida_at   DateTime?
   origen              OrigenServicio @default(manual)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt

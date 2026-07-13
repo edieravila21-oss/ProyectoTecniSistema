@@ -1050,9 +1050,56 @@ const cerrarVencidos = async (req, res, next) => {
   }
 };
 
+const subirFactura = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No se envió ningún archivo', code: 'NO_FILE' });
+    }
+    const servicio = await prisma.servicio.findUnique({ where: { id: req.params.id } });
+    if (!servicio) return res.status(404).json({ success: false, error: 'Servicio no encontrado' });
+
+    const result = await uploadToCloudinary(req.file.buffer, `techserv/facturas/${req.params.id}`);
+
+    const updated = await prisma.servicio.update({
+      where: { id: req.params.id },
+      data: { factura_url: result.secure_url, factura_subida_at: new Date() },
+    });
+
+    await prisma.eventoServicio.create({
+      data: {
+        servicioId: req.params.id,
+        tipo: 'foto_subida',
+        descripcion: 'Factura cargada por administración',
+        usuarioId: req.usuario.id,
+      },
+    });
+
+    res.json({ success: true, data: { factura_url: updated.factura_url, factura_subida_at: updated.factura_subida_at } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const eliminarFactura = async (req, res, next) => {
+  try {
+    const servicio = await prisma.servicio.findUnique({ where: { id: req.params.id } });
+    if (!servicio || !servicio.factura_url) {
+      return res.status(404).json({ success: false, error: 'Factura no encontrada' });
+    }
+    await deleteFromCloudinary(servicio.factura_url);
+    await prisma.servicio.update({
+      where: { id: req.params.id },
+      data: { factura_url: null, factura_subida_at: null },
+    });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
   obtenerChecklist, marcarChecklist, subirFoto, eliminarFoto, guardarFirma,
   guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo, registrarEquipo,
-  cerrarVencidos,
+  cerrarVencidos, subirFactura, eliminarFactura,
 };

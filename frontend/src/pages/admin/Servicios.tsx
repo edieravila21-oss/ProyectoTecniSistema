@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { getServicios, getServicio, cambiarEstadoServicio, asignarTecnico, eliminarServicio, actualizarServicio, crearServicio } from '@/api/servicios';
+import { getServicios, getServicio, cambiarEstadoServicio, asignarTecnico, eliminarServicio, actualizarServicio, crearServicio, subirFactura, eliminarFactura } from '@/api/servicios';
 import { getUsuarios } from '@/api/usuarios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import type { Servicio, Usuario, ChecklistItem, EventoServicio } from '@/types';
 import {
   Search, X, ChevronDown, ChevronUp,
   CheckCircle, Trash2, AlertTriangle, Clock, Pencil, Save,
-  XCircle, ArrowRightLeft, CalendarClock,
+  XCircle, ArrowRightLeft, CalendarClock, FileText, Upload, ExternalLink,
 } from 'lucide-react';
 
 type EditForm = {
@@ -56,6 +56,8 @@ export const Servicios = () => {
   const [continuarFecha, setContinuarFecha] = useState('');
   const [continuarHora, setContinuarHora] = useState('');
   const [continuarNota, setContinuarNota] = useState('');
+  const [subiendoFactura, setSubiendoFactura] = useState(false);
+  const [facturaProgress, setFacturaProgress] = useState(0);
 
   const fetchServicios = useCallback(async () => {
     setLoading(true);
@@ -207,6 +209,39 @@ export const Servicios = () => {
     finally { setSaving(false); }
   };
 
+  const handleSubirFactura = () => {
+    if (!selected) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,application/pdf';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      setSubiendoFactura(true);
+      setFacturaProgress(0);
+      try {
+        const formData = new FormData();
+        formData.append('factura', file);
+        const { data: res } = await subirFactura(selected.id, formData, setFacturaProgress);
+        setSelected(prev => prev ? { ...prev, factura_url: res.data.factura_url, factura_subida_at: res.data.factura_subida_at } : prev);
+        toast.success('Factura cargada correctamente');
+        fetchServicios();
+      } catch { toast.error('Error subiendo la factura'); }
+      finally { setSubiendoFactura(false); setFacturaProgress(0); }
+    };
+    input.click();
+  };
+
+  const handleEliminarFactura = async () => {
+    if (!selected || !window.confirm('¿Eliminar la factura cargada?')) return;
+    try {
+      await eliminarFactura(selected.id);
+      setSelected(prev => prev ? { ...prev, factura_url: undefined, factura_subida_at: undefined } : prev);
+      toast.success('Factura eliminada');
+      fetchServicios();
+    } catch { toast.error('Error eliminando la factura'); }
+  };
+
   const handleEliminar = async () => {
     if (!selected) return;
     const confirmar = window.confirm(`¿Eliminar el servicio de "${selected.cliente?.nombre || 'este cliente'}"? Esta acción no se puede deshacer.`);
@@ -222,6 +257,9 @@ export const Servicios = () => {
   };
 
   const filtrados = servicios.filter(s => {
+    if (filtroEstado === 'sin_factura') {
+      if (s.estado !== 'completado' || s.factura_url) return false;
+    }
     if (!buscar) return true;
     const q = buscar.toLowerCase();
     return s.cliente?.nombre?.toLowerCase().includes(q) || s.direccion_servicio?.toLowerCase().includes(q);
@@ -247,7 +285,7 @@ export const Servicios = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
             <Input placeholder="Buscar cliente o dirección..." value={buscar} onChange={e => setBuscar(e.target.value)} className="pl-9 rounded-xl bg-slate-50 border-slate-100" />
           </div>
-          <Select value={filtroEstado} onChange={e => { setFiltroEstado(e.target.value); setPage(1); }} className="w-44 rounded-xl bg-slate-50 border-slate-100">
+          <Select value={filtroEstado} onChange={e => { setFiltroEstado(e.target.value); setPage(1); }} className="w-52 rounded-xl bg-slate-50 border-slate-100">
             <option value="">Todos los estados</option>
             <option value="pendiente">Pendiente</option>
             <option value="asignado">Asignado</option>
@@ -256,6 +294,7 @@ export const Servicios = () => {
             <option value="pausado">Pausado</option>
             <option value="completado">Completado</option>
             <option value="cancelado">Cancelado</option>
+            <option value="sin_factura">⚠ Pendiente factura</option>
           </Select>
           <Select value={filtroTecnico} onChange={e => { setFiltroTecnico(e.target.value); setPage(1); }} className="w-44 rounded-xl bg-slate-50 border-slate-100">
             <option value="">Todos los técnicos</option>
@@ -295,6 +334,11 @@ export const Servicios = () => {
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <EstadoBadge estado={s.estado} />
+                          {s.estado === 'completado' && !s.factura_url && (
+                            <span title="Factura pendiente" className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-orange-100 text-orange-500 shrink-0">
+                              <FileText className="h-3 w-3" />
+                            </span>
+                          )}
                           {s.sla_ejecucion?.excedido && (
                             <span title={`Excedió SLA: ${s.sla_ejecucion.real_min} min (máx. ${s.sla_ejecucion.max_min} min)`} className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-red-100 text-red-500 shrink-0">
                               <AlertTriangle className="h-3 w-3" />
@@ -624,12 +668,26 @@ export const Servicios = () => {
 
                   {secciones[key] && key === 'cierre' && (
                     <div className="p-4 space-y-4 text-sm">
-                      {selected.firma && (
-                        <div className="bg-slate-50 rounded-xl p-3">
-                          <p className="text-[11px] text-slate-400 font-medium mb-2">Firma del cliente</p>
-                          <img src={selected.firma.url} alt="Firma" className="h-20 border border-slate-200 rounded-xl" />
+
+                      {/* Cotización del técnico */}
+                      {(selected.repuestos && selected.repuestos.length > 0) && (
+                        <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Cotización del técnico</p>
+                          {selected.repuestos.map((r, i) => (
+                            <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-slate-700 font-medium truncate flex-1">{r.nombre}</span>
+                              <span className="text-slate-400 shrink-0">×{r.cantidad}</span>
+                              <span className="text-slate-600 font-semibold shrink-0 tabular-nums">{r.precio_unitario > 0 ? formatCurrency(r.cantidad * r.precio_unitario) : '—'}</span>
+                            </div>
+                          ))}
+                          <div className="border-t border-slate-200 pt-2 flex justify-between font-semibold text-xs">
+                            <span className="text-slate-500">Subtotal repuestos</span>
+                            <span className="text-slate-700 tabular-nums">{formatCurrency(selected.repuestos.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0))}</span>
+                          </div>
                         </div>
                       )}
+
+                      {/* Valor y método de pago */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="bg-slate-50 rounded-xl p-3">
                           <p className="text-[11px] text-slate-400 font-medium mb-0.5">Valor cobrado</p>
@@ -640,10 +698,80 @@ export const Servicios = () => {
                           <p className="font-semibold text-slate-700 capitalize">{selected.metodo_pago?.replace('_', ' ') || '--'}</p>
                         </div>
                       </div>
-                      {selected.notas_tecnico && <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-0.5">Notas del técnico</p><p className="text-slate-600">{selected.notas_tecnico}</p></div>}
-                      {selected.calificacion_cliente && (
-                        <div className="bg-slate-50 rounded-xl p-3"><p className="text-[11px] text-slate-400 font-medium mb-1">Calificación</p><p className="text-lg">{'★'.repeat(selected.calificacion_cliente)}{'☆'.repeat(5 - selected.calificacion_cliente)}</p></div>
+
+                      {/* Firma */}
+                      {selected.firma && (
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[11px] text-slate-400 font-medium mb-2">Firma del cliente</p>
+                          <img src={selected.firma.url} alt="Firma" className="h-20 border border-slate-200 rounded-xl" />
+                        </div>
                       )}
+
+                      {selected.notas_tecnico && (
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[11px] text-slate-400 font-medium mb-0.5">Notas del técnico</p>
+                          <p className="text-slate-600">{selected.notas_tecnico}</p>
+                        </div>
+                      )}
+
+                      {selected.calificacion_cliente && (
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[11px] text-slate-400 font-medium mb-1">Calificación</p>
+                          <p className="text-lg">{'★'.repeat(selected.calificacion_cliente)}{'☆'.repeat(5 - selected.calificacion_cliente)}</p>
+                        </div>
+                      )}
+
+                      {/* Factura admin */}
+                      <div className={`rounded-xl p-4 border space-y-3 ${selected.factura_url ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
+                        <div className="flex items-center gap-2">
+                          <FileText className={`h-4 w-4 shrink-0 ${selected.factura_url ? 'text-emerald-600' : 'text-orange-500'}`} />
+                          <p className={`text-sm font-semibold ${selected.factura_url ? 'text-emerald-700' : 'text-orange-700'}`}>
+                            {selected.factura_url ? 'Factura cargada' : 'Factura pendiente'}
+                          </p>
+                        </div>
+
+                        {selected.factura_url ? (
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={selected.factura_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 flex items-center gap-2 py-2 px-3 bg-white border border-emerald-200 rounded-lg text-xs text-emerald-700 font-medium hover:bg-emerald-50 transition-colors"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              Ver factura
+                            </a>
+                            <button
+                              onClick={handleEliminarFactura}
+                              className="py-2 px-3 bg-white border border-red-200 rounded-lg text-xs text-red-500 font-medium hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs text-orange-600">Carga la factura del servicio para cerrar el expediente.</p>
+                            {subiendoFactura && (
+                              <div>
+                                <div className="flex justify-between text-xs text-blue-600 mb-1">
+                                  <span>Subiendo...</span><span>{facturaProgress}%</span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                  <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${facturaProgress}%` }} />
+                                </div>
+                              </div>
+                            )}
+                            <button
+                              onClick={handleSubirFactura}
+                              disabled={subiendoFactura}
+                              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-white border border-orange-300 rounded-lg text-sm font-semibold text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-50"
+                            >
+                              <Upload className="h-4 w-4" />
+                              {subiendoFactura ? `Subiendo ${facturaProgress}%` : 'Subir factura'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

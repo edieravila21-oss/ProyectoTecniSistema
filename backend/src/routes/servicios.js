@@ -5,7 +5,7 @@ const {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
   obtenerChecklist, marcarChecklist, subirFoto, eliminarFoto, guardarFirma,
   guardarCalificacion, agregarNota, historialEquipo, eliminar, corregirEquipo, registrarEquipo,
-  cerrarVencidos,
+  cerrarVencidos, subirFactura, eliminarFactura,
 } = require('../controllers/serviciosController');
 
 router.use(verifyToken);
@@ -23,6 +23,8 @@ router.patch('/:id/checklist/:item_id', marcarChecklist);
 router.post('/:id/fotos', upload.single('foto'), subirFoto);
 router.delete('/:id/fotos/:fotoId', eliminarFoto);
 router.post('/:id/firma', guardarFirma);
+router.post('/:id/factura', requireAdmin, upload.single('factura'), subirFactura);
+router.delete('/:id/factura', requireAdmin, eliminarFactura);
 router.patch('/:id/calificacion', guardarCalificacion);
 router.post('/:id/notas', agregarNota);
 router.delete('/:id', eliminar);

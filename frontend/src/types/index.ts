@@ -85,6 +85,8 @@ export interface Servicio {
   falla_confirmada?: boolean;
   diagnostico_final?: string;
   repuestos?: { nombre: string; cantidad: number; precio_unitario: number }[];
+  factura_url?: string;
+  factura_subida_at?: string;
   origen: OrigenServicio;
   createdAt: string;
   sla_ejecucion?: {
