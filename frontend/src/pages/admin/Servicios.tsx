@@ -39,7 +39,7 @@ export const Servicios = () => {
   const [filtroTecnico, setFiltroTecnico] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [secciones, setSecciones] = useState({ info: true, timeline: false, checklist: false, fotos: false, cierre: false });
+  const [secciones, setSecciones] = useState({ info: true, cotizacion: false, timeline: false, checklist: false, fotos: false, cierre: false });
 
   // Edit mode
   const [editando, setEditando] = useState(false);
@@ -416,6 +416,9 @@ export const Servicios = () => {
             <div className="p-5 space-y-3">
               {[
                 { key: 'info' as const, label: 'Información general' },
+                ...(((selected.repuestos && selected.repuestos.length > 0) || selected.valor_final != null)
+                  ? [{ key: 'cotizacion' as const, label: `Cotización${selected.valor_final ? ` — ${formatCurrency(selected.valor_final)}` : ''}` }]
+                  : []),
                 { key: 'timeline' as const, label: `Timeline (${selected.eventos?.length || 0})` },
                 { key: 'checklist' as const, label: `Checklist (${selected.checklist?.filter(c => c.completado).length || 0}/${selected.checklist?.length || 0})` },
                 { key: 'fotos' as const, label: `Fotos (${selected.fotos?.length || 0})` },
@@ -623,6 +626,47 @@ export const Servicios = () => {
                     </div>
                   )}
 
+                  {secciones[key] && key === 'cotizacion' && (
+                    <div className="p-4 space-y-3 text-sm">
+                      {selected.repuestos && selected.repuestos.length > 0 && (
+                        <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-2">Repuestos y materiales</p>
+                          {selected.repuestos.map((r, i) => (
+                            <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-slate-700 font-medium truncate flex-1">{r.nombre}</span>
+                              <span className="text-slate-400 shrink-0">×{r.cantidad}</span>
+                              <span className="text-slate-600 font-semibold shrink-0 tabular-nums">
+                                {r.precio_unitario > 0 ? formatCurrency(r.cantidad * r.precio_unitario) : '—'}
+                              </span>
+                            </div>
+                          ))}
+                          <div className="border-t border-slate-200 pt-2 flex justify-between font-semibold text-xs">
+                            <span className="text-slate-500">Subtotal repuestos</span>
+                            <span className="text-slate-700 tabular-nums">
+                              {formatCurrency(selected.repuestos.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0))}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                          <p className="text-[11px] text-emerald-600 font-medium mb-0.5">Valor total</p>
+                          <p className="font-bold text-lg text-emerald-700">{selected.valor_final ? formatCurrency(selected.valor_final) : '--'}</p>
+                        </div>
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[11px] text-slate-400 font-medium mb-0.5">Método de pago</p>
+                          <p className="font-semibold text-slate-700 capitalize">{selected.metodo_pago?.replace('_', ' ') || '--'}</p>
+                        </div>
+                      </div>
+                      {selected.notas_tecnico && (
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[11px] text-slate-400 font-medium mb-0.5">Notas del técnico</p>
+                          <p className="text-slate-600">{selected.notas_tecnico}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {secciones[key] && key === 'timeline' && (
                     <div className="pl-4 border-l-2 border-blue-200 space-y-4 p-4 ml-4">
                       {selected.eventos?.map((ev: EventoServicio) => (
@@ -669,48 +713,11 @@ export const Servicios = () => {
                   {secciones[key] && key === 'cierre' && (
                     <div className="p-4 space-y-4 text-sm">
 
-                      {/* Cotización del técnico */}
-                      {(selected.repuestos && selected.repuestos.length > 0) && (
-                        <div className="bg-slate-50 rounded-xl p-3 space-y-2">
-                          <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Cotización del técnico</p>
-                          {selected.repuestos.map((r, i) => (
-                            <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                              <span className="text-slate-700 font-medium truncate flex-1">{r.nombre}</span>
-                              <span className="text-slate-400 shrink-0">×{r.cantidad}</span>
-                              <span className="text-slate-600 font-semibold shrink-0 tabular-nums">{r.precio_unitario > 0 ? formatCurrency(r.cantidad * r.precio_unitario) : '—'}</span>
-                            </div>
-                          ))}
-                          <div className="border-t border-slate-200 pt-2 flex justify-between font-semibold text-xs">
-                            <span className="text-slate-500">Subtotal repuestos</span>
-                            <span className="text-slate-700 tabular-nums">{formatCurrency(selected.repuestos.reduce((s, r) => s + r.cantidad * r.precio_unitario, 0))}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Valor y método de pago */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-slate-50 rounded-xl p-3">
-                          <p className="text-[11px] text-slate-400 font-medium mb-0.5">Valor cobrado</p>
-                          <p className="font-bold text-lg text-emerald-600">{selected.valor_final ? formatCurrency(selected.valor_final) : '--'}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-xl p-3">
-                          <p className="text-[11px] text-slate-400 font-medium mb-0.5">Método de pago</p>
-                          <p className="font-semibold text-slate-700 capitalize">{selected.metodo_pago?.replace('_', ' ') || '--'}</p>
-                        </div>
-                      </div>
-
                       {/* Firma */}
                       {selected.firma && (
                         <div className="bg-slate-50 rounded-xl p-3">
                           <p className="text-[11px] text-slate-400 font-medium mb-2">Firma del cliente</p>
                           <img src={selected.firma.url} alt="Firma" className="h-20 border border-slate-200 rounded-xl" />
-                        </div>
-                      )}
-
-                      {selected.notas_tecnico && (
-                        <div className="bg-slate-50 rounded-xl p-3">
-                          <p className="text-[11px] text-slate-400 font-medium mb-0.5">Notas del técnico</p>
-                          <p className="text-slate-600">{selected.notas_tecnico}</p>
                         </div>
                       )}
 
