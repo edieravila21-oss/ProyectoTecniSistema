@@ -117,7 +117,7 @@ const listar = async (req, res, next) => {
           tecnico: { select: { id: true, nombre: true, foto_url: true } },
           equipo: { select: { id: true, tipo: true, marca: true, modelo: true } },
         },
-        orderBy: [{ fecha_programada: 'asc' }, { hora_inicio: 'asc' }],
+        orderBy: [{ fecha_programada: 'desc' }, { hora_inicio: 'desc' }],
         ...paginar(page, limit),
       }),
       prisma.servicio.count({ where }),
