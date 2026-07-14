@@ -1,6 +1,6 @@
 const prisma = require('../config/db');
 const { getIO } = require('../config/socket');
-const { uploadToCloudinary, uploadBase64ToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
+const { uploadToCloudinary, uploadDocumentToCloudinary, uploadBase64ToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 const { getChecklistPorTipo } = require('../services/checklistService');
 const { validarTransicion, paginar, respuestaPaginada } = require('../utils/helpers');
 
@@ -1058,7 +1058,7 @@ const subirFactura = async (req, res, next) => {
     const servicio = await prisma.servicio.findUnique({ where: { id: req.params.id } });
     if (!servicio) return res.status(404).json({ success: false, error: 'Servicio no encontrado' });
 
-    const result = await uploadToCloudinary(req.file.buffer, `techserv/facturas/${req.params.id}`);
+    const result = await uploadDocumentToCloudinary(req.file.buffer, `techserv/facturas/${req.params.id}`);
 
     const updated = await prisma.servicio.update({
       where: { id: req.params.id },

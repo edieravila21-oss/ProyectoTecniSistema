@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const upload = require('../middlewares/upload');
+const { uploadDocument } = require('../middlewares/upload');
 const { verifyToken, requireAdmin } = require('../middlewares/auth');
 const {
   listar, obtener, crear, actualizar, cambiarEstado, asignarTecnico,
@@ -23,7 +24,7 @@ router.patch('/:id/checklist/:item_id', marcarChecklist);
 router.post('/:id/fotos', upload.single('foto'), subirFoto);
 router.delete('/:id/fotos/:fotoId', eliminarFoto);
 router.post('/:id/firma', guardarFirma);
-router.post('/:id/factura', requireAdmin, upload.single('factura'), subirFactura);
+router.post('/:id/factura', requireAdmin, uploadDocument.single('factura'), subirFactura);
 router.delete('/:id/factura', requireAdmin, eliminarFactura);
 router.patch('/:id/calificacion', guardarCalificacion);
 router.post('/:id/notas', agregarNota);

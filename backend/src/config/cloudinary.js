@@ -57,6 +57,25 @@ const uploadBase64ToCloudinary = async (base64String, folder = 'techserv/firmas'
   return { secure_url: relativePath };
 };
 
+const uploadDocumentToCloudinary = (buffer, folder = 'techserv') => {
+  if (useCloudinary) {
+    return new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder, resource_type: 'auto' },
+        (error, result) => { if (error) reject(error); else resolve(result); }
+      );
+      stream.end(buffer);
+    });
+  }
+
+  const subDir = path.join(UPLOADS_DIR, folder.replace(/\//g, path.sep));
+  ensureDir(subDir);
+  const filename = `${crypto.randomUUID()}.pdf`;
+  const filePath = path.join(subDir, filename);
+  fs.writeFileSync(filePath, buffer);
+  return Promise.resolve({ secure_url: `/uploads/${folder}/${filename}` });
+};
+
 const deleteFromCloudinary = async (url) => {
   if (useCloudinary && cloudinary) {
     const match = url.match(/\/upload\/(?:v\d+\/)?(.+)\.\w+$/);
@@ -67,4 +86,4 @@ const deleteFromCloudinary = async (url) => {
   }
 };
 
-module.exports = { cloudinary, uploadToCloudinary, uploadBase64ToCloudinary, deleteFromCloudinary };
+module.exports = { cloudinary, uploadToCloudinary, uploadDocumentToCloudinary, uploadBase64ToCloudinary, deleteFromCloudinary };
