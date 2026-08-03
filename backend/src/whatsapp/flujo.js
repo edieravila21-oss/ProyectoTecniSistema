@@ -7,22 +7,24 @@ const { escribiendoTimestamps } = require('./estado');
 const { formatCurrency } = require('../utils/helpers');
 
 const TIMEOUT_MS = 30 * 60 * 1000;
-const ASESORA_TELEFONO = '573234465603';
-const ASESORA_NOMBRE = 'Alejandra';
+
+let configAsesora = { nombre: 'nuestra asesora', telefono: null };
 
 const escalarAHumano = async (sock, telefono, sesion, razon, enviar, sesiones) => {
   const nombre = sesion?.datos?.nombre || 'Cliente';
-  await enviar(`Voy a pasar tu caso a ${ASESORA_NOMBRE}, nuestra asesora. Ella te contactará pronto 🙌`);
+  await enviar(`Voy a pasar tu caso a ${configAsesora.nombre}, nuestra asesora. Ella te contactará pronto 🙌`);
   await upsertConversacion(telefono, { estado: 'escalado', bot_activo: false, ultimo_mensaje: razon });
   try { getIO().to('admin').emit('whatsapp_escalado', { telefono, nombre, razon }); } catch (_) {}
 
-  try {
-    const asesoraJid = `${ASESORA_TELEFONO}@s.whatsapp.net`;
-    await sock.sendMessage(asesoraJid, {
-      text: `📢 *Escalación — ${nombre}*\n\n📱 Teléfono: ${telefono}\n📝 Motivo: ${razon}\n\nEl bot se desactivó para este chat. Respóndele directamente al cliente.`,
-    });
-  } catch (err) {
-    console.error('[WhatsApp] Error notificando asesora:', err.message);
+  if (configAsesora.telefono) {
+    try {
+      const asesoraJid = `${configAsesora.telefono}@s.whatsapp.net`;
+      await sock.sendMessage(asesoraJid, {
+        text: `📢 *Escalación — ${nombre}*\n\n📱 Teléfono: ${telefono}\n📝 Motivo: ${razon}\n\nEl bot se desactivó para este chat. Respóndele directamente al cliente.`,
+      });
+    } catch (err) {
+      console.error('[WhatsApp] Error notificando asesora:', err.message);
+    }
   }
 
   sesiones.delete(telefono);
@@ -45,6 +47,10 @@ const cargarTimers = async () => {
         maxEspera: config.bot_max_espera_ms || 45000,
         typingEspera: config.bot_typing_espera_ms || 8000,
         delayRespuesta: config.bot_delay_respuesta_ms || 2000,
+      };
+      configAsesora = {
+        nombre: config.asesora_nombre || 'nuestra asesora',
+        telefono: config.asesora_telefono || null,
       };
     }
   } catch (_) {}
@@ -463,7 +469,7 @@ const procesarBuffer = async (telefono, sesiones) => {
         await enviar(mensajeLimpio || `Me falta saber ${falta.join(' y ')} para poder agendar. ¿Me ayudas con eso? 😊`);
         return;
       }
-      return await procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, config, negocio);
+      return await procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, config, negocio, sesiones);
     }
 
     if (resp.includes('[ESCALAR]')) {
@@ -485,7 +491,7 @@ const procesarBuffer = async (telefono, sesiones) => {
   }
 };
 
-async function procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, config, negocio) {
+async function procesarAgendamiento(sock, telefono, remoteJid, sesion, enviar, config, negocio, sesiones) {
   const tipoLabel = { nevera: 'Nevera', aire_acondicionado: 'Aire acondicionado', otro: 'Otro equipo' };
   const tipo = sesion.datos.tipo_equipo || 'otro';
 

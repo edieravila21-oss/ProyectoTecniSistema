@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const prisma = require('../config/db');
 const { listarConversaciones, obtenerConversacion, cambiarEstado, toggleBot, agregarNota, estadoBot, conectar, desconectar, eliminarConversacion } = require('../controllers/whatsappController');
 const { verifyToken, requireAdmin } = require('../middlewares/auth');
 
@@ -13,6 +14,24 @@ router.get('/estado', estadoBot);
 router.post('/conectar', conectar);
 router.post('/desconectar', desconectar);
 router.delete('/conversacion/:telefono', eliminarConversacion);
+
+router.post('/conversacion/:telefono/enviar', async (req, res) => {
+  const { telefono } = req.params;
+  const { mensaje } = req.body;
+  if (!mensaje?.trim()) return res.status(400).json({ success: false, error: 'Mensaje requerido' });
+  try {
+    const { enviarMensaje } = require('../whatsapp/bot');
+    await enviarMensaje(`${telefono}@s.whatsapp.net`, mensaje.trim());
+    await prisma.mensajeWhatsApp.create({
+      data: { telefono, direccion: 'saliente', contenido: mensaje.trim(), tipo: 'texto', estado: 'procesado', sesion_id: telefono },
+    });
+    const { getIO } = require('../config/socket');
+    try { getIO().to('admin').emit('whatsapp_conversacion_update', { telefono }); } catch (_) {}
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 router.post('/enviar-encuesta', async (req, res) => {
   const { telefono } = req.body;

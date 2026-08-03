@@ -412,6 +412,8 @@ model Configuracion {
   valor_diagnostico     Float  @default(40000)
   mensaje_bienvenida    String @default("Bienvenido a TechServ Pro, servicio técnico especializado en aires y neveras.")
   meses_recordatorio    Int    @default(6)
+  asesora_nombre        String  @default("Alejandra")
+  asesora_telefono      String?
   bot_debounce_ms       Int    @default(10000)
   bot_max_espera_ms     Int    @default(45000)
   bot_typing_espera_ms  Int    @default(8000)

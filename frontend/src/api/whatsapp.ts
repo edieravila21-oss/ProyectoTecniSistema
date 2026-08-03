@@ -30,3 +30,6 @@ export const eliminarConversacion = (telefono: string) =>
 
 export const enviarEncuesta = (telefono: string) =>
   api.post<ApiResponse<{ message: string }>>('/whatsapp/enviar-encuesta', { telefono });
+
+export const enviarMensajeAdmin = (telefono: string, mensaje: string) =>
+  api.post<ApiResponse<unknown>>(`/whatsapp/conversacion/${telefono}/enviar`, { mensaje });

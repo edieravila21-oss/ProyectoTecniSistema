@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { getConversaciones, getConversacion, cambiarEstadoConversacion, toggleBotConversacion, agregarNotaConversacion, getEstadoBot, conectarBot, desconectarBot, eliminarConversacion, enviarEncuesta } from '@/api/whatsapp';
+import { getConversaciones, getConversacion, cambiarEstadoConversacion, toggleBotConversacion, agregarNotaConversacion, getEstadoBot, conectarBot, desconectarBot, eliminarConversacion, enviarEncuesta, enviarMensajeAdmin } from '@/api/whatsapp';
 import { Input } from '@/components/ui/input';
 import { useSocketStore } from '@/store/socketStore';
 import { useNotificacionesStore } from '@/store/notificacionesStore';
@@ -11,7 +11,7 @@ import type { ConversacionWhatsApp, MensajeWhatsApp, EstadoConversacion } from '
 import {
   MessageCircleMore, QrCode, Bot, UserCircle, BotOff,
   Phone, Calendar, AlertTriangle, CheckCircle2, X, GripVertical,
-  MessageSquare, Pause, Play, Wifi, Loader2, WifiOff, Trash2,
+  MessageSquare, Pause, Play, Wifi, Loader2, WifiOff, Trash2, Send,
 } from 'lucide-react';
 
 const COLUMNAS: { id: EstadoConversacion; label: string; color: string; icon: React.ReactNode; bg: string }[] = [
@@ -112,6 +112,8 @@ export const WhatsAppPage = () => {
     } catch { toast.error('Error moviendo conversación'); }
   };
 
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
   const [conectando, setConectando] = useState(false);
 
   const handleConectar = async () => {
@@ -128,6 +130,18 @@ export const WhatsAppPage = () => {
       await desconectarBot();
       toast.success('WhatsApp desconectado');
     } catch { toast.error('Error al desconectar'); }
+  };
+
+  const handleSendReply = async () => {
+    if (!selectedConv || !replyText.trim() || sendingReply) return;
+    setSendingReply(true);
+    try {
+      await enviarMensajeAdmin(selectedConv.telefono, replyText.trim());
+      setReplyText('');
+      const { data: res } = await getConversacion(selectedConv.telefono);
+      setMensajes(res.data.mensajes);
+    } catch { toast.error('Error enviando mensaje'); }
+    finally { setSendingReply(false); }
   };
 
   const handleEliminar = async (telefono: string) => {
@@ -394,6 +408,29 @@ export const WhatsAppPage = () => {
                 ))
               )}
               <div ref={chatEndRef} />
+            </div>
+
+            {/* Reply input */}
+            <div className="shrink-0 border-t border-slate-100 bg-white p-3 flex items-end gap-2">
+              <textarea
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(); } }}
+                placeholder="Escribe un mensaje como admin…"
+                rows={1}
+                disabled={!whatsappConectado}
+                className="flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-50 max-h-28 overflow-y-auto"
+                style={{ lineHeight: '1.4' }}
+              />
+              <button
+                onClick={handleSendReply}
+                disabled={!replyText.trim() || sendingReply || !whatsappConectado}
+                className="h-10 w-10 rounded-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 flex items-center justify-center shrink-0 transition-colors"
+              >
+                {sendingReply
+                  ? <Loader2 className="h-4 w-4 text-white animate-spin" />
+                  : <Send className="h-4 w-4 text-white" />}
+              </button>
             </div>
           </div>
         </div>
