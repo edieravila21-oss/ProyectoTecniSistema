@@ -646,9 +646,6 @@ export const CalendarioTecnicos = () => {
   const handleCrearCita = async () => {
     if (!citaForm.clienteId) { toast.error('Selecciona un cliente'); return; }
     if (!citaForm.fecha_programada) { toast.error('Selecciona una fecha'); return; }
-    const dCita = new Date(citaForm.fecha_programada + 'T00:00:00');
-    if (esDomingo(dCita)) { toast.error('No se trabaja los domingos'); return; }
-    if (esFestivo(citaForm.fecha_programada)) { toast.error('Día festivo — no se trabaja este día'); return; }
     if (!citaForm.hora_inicio) { toast.error('Selecciona la hora'); return; }
     if (citaExtendida && (!citaAlmuerzoInicio || !citaAlmuerzoFin)) {
       toast.error('Completa los horarios de almuerzo'); return;
@@ -676,15 +673,14 @@ export const CalendarioTecnicos = () => {
     finally { setSaving(false); }
   };
 
-  // Días laborables: lunes–sábado, sin domingos ni festivos
+  // Todos los días entre las fechas indicadas (incluye domingos y festivos)
   const getDiasLaborales = (desde: string, hasta: string): string[] => {
     const dias: string[] = [];
     let cur = new Date(desde + 'T00:00:00');
     const end = new Date(hasta + 'T00:00:00');
     while (cur <= end) {
-      const d = cur.getDay();
       const ds = format(cur, 'yyyy-MM-dd');
-      if (d !== 0 && !esFestivo(ds)) dias.push(ds);
+      dias.push(ds);
       cur = addDays(cur, 1);
     }
     return dias;
@@ -988,7 +984,7 @@ export const CalendarioTecnicos = () => {
         <Card className="border-amber-200 bg-amber-50/50 p-3">
           <p className="text-sm font-semibold text-amber-700 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
-            {esDomingoHoy ? 'Domingo — día no laboral' : 'Festivo colombiano — no se trabaja este día'}
+            {esDomingoHoy ? 'Domingo' : 'Festivo colombiano'}
           </p>
         </Card>
       )}
@@ -1920,16 +1916,13 @@ export const CalendarioTecnicos = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
                       <label className="text-xs font-semibold text-slate-500 mb-1.5 block">
-                        Fecha <span className="text-slate-400 font-normal">(Lun–Sáb, sin festivos)</span>
+                        Fecha
                       </label>
                       <input
                         type="date"
                         value={citaForm.fecha_programada}
                         onChange={e => {
                           const v = e.target.value;
-                          const d = new Date(v + 'T00:00:00');
-                          if (esDomingo(d)) { toast.error('No se trabaja los domingos'); return; }
-                          if (esFestivo(v)) { toast.error('Día festivo — no se trabaja'); return; }
                           setCitaForm(f => ({ ...f, fecha_programada: v }));
                         }}
                         className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
@@ -2345,7 +2338,7 @@ export const CalendarioTecnicos = () => {
                       {form.repeticion !== 'ninguna' && (
                         <p className="text-[11px] text-blue-600 mt-1.5 flex items-center gap-1">
                           <Repeat className="h-3 w-3 shrink-0" />
-                          {form.repeticion === 'siempre' ? 'Próximos 2 años · Lun–Sáb, sin festivos ni domingos' : 'Lun–Sáb, excluye domingos y festivos'}
+                          {form.repeticion === 'siempre' ? 'Próximos 2 años · todos los días' : 'Incluye domingos y festivos'}
                           {form.todos_tecnicos && tecnicos.length > 0 ? ` · ${tecnicos.length} técnicos` : ''}
                           {' · '}~{estimarEventos()} evento{estimarEventos() !== 1 ? 's' : ''}
                         </p>
