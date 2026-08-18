@@ -5,6 +5,17 @@ import App from './App.tsx'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+
+  // A page load is still served by whichever SW was already controlling it —
+  // a freshly-installed SW only takes over starting with the *next* navigation.
+  // Reload once when that handoff happens so a new deploy (e.g. the kill-switch
+  // flag) takes effect on the very next visit instead of needing two refreshes.
+  let reloadedForNewWorker = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadedForNewWorker) return;
+    reloadedForNewWorker = true;
+    window.location.reload();
+  });
 }
 
 // On startup: sync any queued offline actions, then clean stale cache.
