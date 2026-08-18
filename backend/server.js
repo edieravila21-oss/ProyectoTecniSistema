@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const path = require('path');
 const http = require('http');
 const { initSocket } = require('./src/config/socket');
+const { SISTEMA_BLOQUEADO } = require('./src/config/systemLock');
 const errorHandler = require('./src/middlewares/errorHandler');
 
 const app = express();
@@ -49,6 +50,11 @@ app.use('/api/externos', require('./src/routes/externos'));
 
 app.get('/api/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date() } });
+});
+
+// Sin auth: el frontend lo consulta antes de saber si hay sesión válida.
+app.get('/api/system/status', (req, res) => {
+  res.json({ success: true, data: { bloqueado: SISTEMA_BLOQUEADO } });
 });
 
 app.use(errorHandler);

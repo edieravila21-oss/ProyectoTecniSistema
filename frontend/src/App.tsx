@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useSocketStore } from '@/store/socketStore';
 import { ToastContainer } from '@/components/shared/Toast';
 import { SistemaBloqueado } from '@/components/shared/SistemaBloqueado';
-import { SISTEMA_BLOQUEADO } from '@/config/appLock';
+import { useSystemLock } from '@/hooks/useSystemLock';
 
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { TecnicoLayout } from '@/components/layout/TecnicoLayout';
@@ -91,7 +91,8 @@ const AppContent = () => {
 };
 
 function App() {
-  if (SISTEMA_BLOQUEADO) return <SistemaBloqueado />;
+  const bloqueado = useSystemLock();
+  if (bloqueado) return <SistemaBloqueado />;
 
   return (
     <BrowserRouter>
