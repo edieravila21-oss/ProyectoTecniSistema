@@ -1,5 +1,5 @@
 // ─── OFFLINE CACHING ───────────────────────────────────────────────────────
-const CACHE_SHELL = 'refri-shell-v2';
+const CACHE_SHELL = 'refri-shell-v3';
 const CACHE_API   = 'refri-api-v1';
 const CACHE_IMG   = 'refri-img-v1';
 
@@ -42,7 +42,10 @@ self.addEventListener('fetch', (event) => {
   // fall back to cached shell only when offline
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      // cache: 'reload' bypasses the browser's own HTTP cache too — otherwise a
+      // fresh-looking fetch can still resolve to a stale index.html without ever
+      // reaching the server, which would hide the kill-switch flag from clients.
+      fetch(request, { cache: 'reload' })
         .then((response) => {
           const clone = response.clone();
           caches.open(CACHE_SHELL).then((cache) => cache.put('/index.html', clone));
